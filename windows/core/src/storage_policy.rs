@@ -46,5 +46,16 @@ pub const fn gpu_written_buffer_storage_mode() -> StorageMode {
     StorageMode::Shared
 }
 
+/// Storage mode for the PE pages a readback blit writes into.
+///
+/// `Managed` plus a `synchronizeResource:` blit is what brings the GPU's
+/// writes back on a discrete-memory Mac. On unified memory `Shared` sees them
+/// directly, and it is the only choice on iOS, where `Managed` does not exist
+/// and Metal aborts the process when asked for it.
+#[must_use]
+pub const fn readback_buffer_storage_mode(unified_memory: bool) -> StorageMode {
+    buffer_storage_mode(unified_memory)
+}
+
 #[cfg(test)]
 mod tests;

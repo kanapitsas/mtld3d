@@ -24,3 +24,9 @@ fn non_uma_picks_managed() {
 fn gpu_written_buffers_are_shared_on_every_device() {
     assert_eq!(gpu_written_buffer_storage_mode(), StorageMode::Shared);
 }
+
+#[test]
+fn readback_is_shared_on_unified_memory_where_ios_has_no_managed() {
+    assert_eq!(readback_buffer_storage_mode(true), StorageMode::Shared);
+    assert_eq!(readback_buffer_storage_mode(false), StorageMode::Managed);
+}

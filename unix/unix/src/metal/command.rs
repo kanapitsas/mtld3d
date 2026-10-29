@@ -3818,12 +3818,20 @@ pub fn blit_texture_to_buffer(args: &BlitArgs<'_>) -> bool {
         error!(target: LOG_TARGET, "blit_texture_to_buffer: null dst_ptr");
         return false;
     };
-    // Managed + `synchronizeResource:` so the GPU→CPU readback works on
-    // non-UMA Macs (Intel/AMD): the blit writes into VRAM, then the
-    // synchronize copies VRAM back to the wrapped PE pages before the
-    // CPU read on `waitUntilCompleted` return. On UMA the storage mode
-    // collapses to Shared semantics and synchronize is a no-op, so
-    // there's no Apple-Silicon overhead.
+    // Non-UMA Macs (Intel/AMD) need Managed + `synchronizeResource:`: the
+    // blit writes into VRAM, then the synchronize copies VRAM back to the
+    // wrapped PE pages before the CPU read on `waitUntilCompleted` return.
+    // Unified memory (every Apple GPU) takes Shared, which sees the writes
+    // directly; it is the only choice on iOS, where Managed does not exist
+    // and Metal aborts the process when asked for it.
+    let managed =
+        mtld3d_core::storage_policy::readback_buffer_storage_mode(device.hasUnifiedMemory())
+            == mtld3d_shared::mtl::StorageMode::Managed;
+    let options = if managed {
+        MTLResourceOptions::StorageModeManaged
+    } else {
+        MTLResourceOptions::StorageModeShared
+    };
     // SAFETY: `ptr` is the PE-supplied dst pointer (non-null by the check
     // above); `dst_len` matches its allocation; deallocator is None so the
     // PE allocation is never freed by Metal.
@@ -3831,7 +3839,7 @@ pub fn blit_texture_to_buffer(args: &BlitArgs<'_>) -> bool {
         device.newBufferWithBytesNoCopy_length_options_deallocator(
             ptr,
             to_usize(dst_len),
-            MTLResourceOptions::StorageModeManaged,
+            options,
             None,
         )
     }) else {
@@ -4022,7 +4030,9 @@ pub fn blit_texture_to_buffer(args: &BlitArgs<'_>) -> bool {
             );
         }
     }
-    blit.synchronizeResource(ProtocolObject::from_ref(&*dst_buffer));
+    if managed {
+        blit.synchronizeResource(ProtocolObject::from_ref(&*dst_buffer));
+    }
 
     blit.endEncoding();
     cmd_buf.commit();
