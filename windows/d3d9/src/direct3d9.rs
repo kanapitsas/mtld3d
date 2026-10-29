@@ -754,6 +754,18 @@ extern "system" fn d3d9_get_adapter_identifier(
             "adapter.spoof: reporting vendor {:#06x} device {:#06x}", s.vendor, s.device
         );
     }
+    // A native host names the PCI ids its application expects, over every
+    // other source: the host knows what the application was built against.
+    #[cfg(not(windows))]
+    if let Some(host) = mtld3d_core::native_host::get() {
+        let (vendor, device) = host.pci_ids();
+        if let Some(vendor) = vendor {
+            id.vendor_id = u32::from(vendor);
+        }
+        if let Some(device) = device {
+            id.device_id = u32::from(device);
+        }
+    }
 
     // SAFETY: vtable out-param; `id_out` is *mut D3DADAPTER_IDENTIFIER9 per IDirect3D9 ABI,
     // non-null per the check above; alignment is not assumed.
@@ -1617,21 +1629,32 @@ extern "system" fn d3d9_get_adapter_monitor(_this: *mut c_void, _adapter: u32) -
     crate::fullscreen::primary_monitor()
 }
 
+#[cfg(windows)]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn GetClientRect(hwnd: *mut c_void, rect: *mut Rect) -> i32;
 }
 
+#[cfg(windows)]
 #[link(name = "gdi32")]
 unsafe extern "system" {
     fn D3DKMTOpenAdapterFromGdiDisplayName(desc: *mut D3dkmtOpenAdapterFromGdiDisplayName) -> u32;
     fn D3DKMTCloseAdapter(desc: *const D3dkmtCloseAdapter) -> u32;
 }
 
+#[cfg(windows)]
 #[link(name = "advapi32")]
 unsafe extern "system" {
     fn AllocateLocallyUniqueId(luid: *mut LUID) -> i32;
 }
+
+#[cfg(not(windows))]
+use crate::host::win32::{
+    allocate_locally_unique_id as AllocateLocallyUniqueId,
+    d3dkmt_close_adapter as D3DKMTCloseAdapter,
+    d3dkmt_open_adapter_from_gdi_display_name as D3DKMTOpenAdapterFromGdiDisplayName,
+    get_client_rect as GetClientRect,
+};
 
 /// Win32 `D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME`: a GDI display name in, its adapter out.
 #[repr(C)]

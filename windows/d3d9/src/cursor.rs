@@ -63,6 +63,7 @@ const LOG_TARGET: &str = "mtld3d::d3d9::cursor";
 
 // ── Win32 FFI ──
 
+#[cfg(windows)]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SetCursor(cursor: *mut c_void) -> *mut c_void;
@@ -89,19 +90,20 @@ unsafe extern "system" {
 // `GetClassLongPtrW` only exists on 64-bit Windows; 32-bit user32 exports
 // `GetClassLongW`, and the header aliases one to the other. One Rust-side
 // symbol per arch keeps the call site uniform.
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(windows, target_pointer_width = "64"))]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn GetClassLongPtrW(hwnd: *mut c_void, index: i32) -> usize;
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(windows, target_pointer_width = "32"))]
 #[link(name = "user32")]
 unsafe extern "system" {
     #[link_name = "GetClassLongW"]
     fn GetClassLongPtrW(hwnd: *mut c_void, index: i32) -> usize;
 }
 
+#[cfg(windows)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetCurrentThreadId() -> u32;
@@ -267,6 +269,7 @@ fn create_bitmap_packed(
     unsafe { CreateBitmap(width, height, planes, bpp, bits) }
 }
 
+#[cfg(windows)]
 #[link(name = "gdi32")]
 unsafe extern "system" {
     fn CreateBitmap(
@@ -278,6 +281,18 @@ unsafe extern "system" {
     ) -> *mut c_void;
     fn DeleteObject(object: *mut c_void) -> i32;
 }
+
+#[cfg(not(windows))]
+use crate::host::win32::{
+    call_window_proc_w as CallWindowProcW, create_bitmap as CreateBitmap,
+    create_icon_indirect as CreateIconIndirect, def_window_proc_w as DefWindowProcW,
+    delete_object as DeleteObject, destroy_cursor as DestroyCursor,
+    get_class_long_ptr_w as GetClassLongPtrW, get_current_thread_id as GetCurrentThreadId,
+    get_cursor as GetCursor, get_cursor_info as GetCursorInfo, get_cursor_pos as GetCursorPos,
+    get_foreground_window as GetForegroundWindow, get_last_error as GetLastError,
+    get_window_thread_process_id as GetWindowThreadProcessId, load_cursor_w as LoadCursorW,
+    post_message_w as PostMessageW, set_cursor as SetCursor, set_cursor_pos as SetCursorPos,
+};
 
 // ── Constants ──
 

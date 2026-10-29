@@ -4,7 +4,9 @@ use mtld3d_shared::Thunk;
 #[cfg(perf_tracking)]
 use mtld3d_shared::encoder_protocol::EncoderSubmitMode;
 
-#[link(name = "mtld3d", kind = "raw-dylib")]
+// `mtld3d.dll`'s export on Windows. A native host build links the runtime into
+// the same library, which defines the symbol itself (`native/d3d9metal`).
+#[cfg_attr(windows, link(name = "mtld3d", kind = "raw-dylib"))]
 unsafe extern "C" {
     fn mtld3d_unix_call(code: u32, args: *mut c_void) -> i32;
 }

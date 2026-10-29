@@ -3352,6 +3352,7 @@ fn parse_surface_rect(rect: *const c_void, full_w: u32, full_h: u32) -> (u32, u3
 
 // ── GDI FFI (IDirect3DSurface9::GetDC / ReleaseDC over a memory-backed DC) ──
 
+#[cfg(windows)]
 #[link(name = "gdi32")]
 unsafe extern "system" {
     fn CreateCompatibleDC(dc: *mut c_void) -> *mut c_void;
@@ -3359,6 +3360,13 @@ unsafe extern "system" {
     fn D3DKMTCreateDCFromMemory(desc: *mut D3DKMT_CREATEDCFROMMEMORY) -> u32;
     fn D3DKMTDestroyDCFromMemory(desc: *const D3DKMT_DESTROYDCFROMMEMORY) -> u32;
 }
+
+#[cfg(not(windows))]
+use crate::host::win32::{
+    create_compatible_dc as CreateCompatibleDC,
+    d3dkmt_create_dc_from_memory as D3DKMTCreateDCFromMemory,
+    d3dkmt_destroy_dc_from_memory as D3DKMTDestroyDCFromMemory, delete_dc as DeleteDC,
+};
 
 /// Win32 `D3DKMT_CREATEDCFROMMEMORY`: wraps an existing pixel store, no copy.
 ///

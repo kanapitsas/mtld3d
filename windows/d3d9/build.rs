@@ -1,6 +1,15 @@
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    println!("cargo:rustc-cdylib-link-arg=/DEF:{manifest_dir}/d3d9.def");
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
+        println!("cargo:rustc-cdylib-link-arg=/DEF:{manifest_dir}/d3d9.def");
+    } else {
+        // A native host build links the `rlib` into `libd3d9metal`, which
+        // defines `mtld3d_unix_call`; Cargo still links the `cdylib` of a
+        // dependency, which goes unused, so it may leave that one symbol to be
+        // bound at load.
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-U,_mtld3d_unix_call");
+    }
 
     // The x86_64 DLL's linker map, `deps/d3d9.map` beside the linked image,
     // with every function's address, size and name. The Makefile's

@@ -128,9 +128,8 @@ impl EncoderThread {
         gpu_caps: GpuCaps,
         config: &Mtld3dConfig,
     ) -> Result<Self, i32> {
-        let cache_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|parent| parent.join("mtld3d_shaders.bin")))
+        let cache_path = shader_cache_dir()
+            .map(|dir| dir.join("mtld3d_shaders.bin"))
             .and_then(|path| crate::wine_path::unix_path(&path));
         if config.shader_cache_enable && cache_path.is_none() {
             mtld3d_shared::log_once_warn!(target: LOG_TARGET, "encoder: cannot translate game shader cache path");
@@ -525,4 +524,25 @@ impl RetirementHooks for RetirementCalls<'_> {
                 .record_failure(status, "native shader cancellation failed");
         }
     }
+}
+
+/// The directory the shader cache lives in: the executable's.
+#[cfg(windows)]
+fn shader_cache_dir() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+}
+
+/// The directory the shader cache lives in: the native host's `cache_dir`, else the executable's.
+#[cfg(not(windows))]
+fn shader_cache_dir() -> Option<std::path::PathBuf> {
+    mtld3d_core::native_host::get()
+        .and_then(mtld3d_core::native_host::NativeHost::cache_dir)
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+        })
 }

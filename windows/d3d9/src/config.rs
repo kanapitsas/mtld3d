@@ -13,17 +13,21 @@
 //! anything; the interface owns the result and hands it to each device it
 //! creates.
 
-use std::{ffi::c_void, path::PathBuf, ptr};
+use std::path::PathBuf;
+#[cfg(windows)]
+use std::{ffi::c_void, ptr};
 
 use log::info;
 use mtld3d_core::{
     app_profile::{AppIdentity, AppProfile},
     config::{Mtld3dConfig, log_options, parse},
 };
+#[cfg(windows)]
 use mtld3d_shared::identity::version_blob;
 
 use crate::LOG_TARGET;
 
+#[cfg(windows)]
 unsafe extern "system" {
     fn GetModuleHandleA(module_name: *const u8) -> *mut c_void;
 }
@@ -44,6 +48,7 @@ pub fn load() -> Mtld3dConfig {
 /// For the `EnumDisplaySettings` redirect, which serves the main module
 /// before or without any `IDirect3D9`. Resolves the same three layers an
 /// interface would, without logging every option again.
+#[cfg(windows)]
 pub fn max_resolutions() -> u32 {
     resolve().max_resolutions
 }
@@ -69,14 +74,26 @@ fn resolve() -> Mtld3dConfig {
 fn app_profile() -> Option<&'static AppProfile> {
     let exe = std::env::current_exe().ok()?;
     let name = exe.file_name()?.to_string_lossy().into_owned();
+    let blob = main_image_version();
+    mtld3d_core::app_profile::lookup(&AppIdentity::new(name, blob.as_deref()))
+}
+
+/// The `VS_VERSIONINFO` resource of the main image, which a profile matches on.
+#[cfg(windows)]
+fn main_image_version() -> Option<Vec<u16>> {
     // A null module name asks for the main image, which is the executable the
     // profile matches on rather than this DLL.
     // SAFETY: the call takes a null name and returns the main image's handle.
     let main = unsafe { GetModuleHandleA(ptr::null()) };
     // SAFETY: `main` is a handle the loader owns, so the image behind it is
     // mapped for the life of the process.
-    let blob = unsafe { version_blob(main) };
-    mtld3d_core::app_profile::lookup(&AppIdentity::new(name, blob.as_deref()))
+    unsafe { version_blob(main) }
+}
+
+/// A native host's executable is no PE image and carries no version resource.
+#[cfg(not(windows))]
+const fn main_image_version() -> Option<Vec<u16>> {
+    None
 }
 
 fn read_conf_file() -> Option<String> {

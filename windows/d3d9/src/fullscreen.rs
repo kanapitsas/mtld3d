@@ -104,11 +104,11 @@ struct Point {
 
 /// Win32 `MONITORINFO`.
 #[repr(C)]
-struct MonitorInfo {
-    cb_size: u32,
-    rc_monitor: Rect,
-    rc_work: Rect,
-    dw_flags: u32,
+pub struct MonitorInfo {
+    pub cb_size: u32,
+    pub rc_monitor: Rect,
+    pub rc_work: Rect,
+    pub dw_flags: u32,
 }
 
 /// `MONITORINFO`'s ABI size, which the API reads back out of `cb_size`.
@@ -123,37 +123,37 @@ const _: () = assert!(size_of::<MonitorInfo>() == MONITOR_INFO_SIZE as usize);
 /// (`dmPosition` + orientation/fixed-output vs. the printer fields) is
 /// declared as its display arm, which is what `EnumDisplaySettingsW` fills.
 #[repr(C)]
-struct DevModeW {
-    device_name: [u16; 32],
-    spec_version: u16,
-    driver_version: u16,
-    size: u16,
-    driver_extra: u16,
-    fields: u32,
-    position_x: i32,
-    position_y: i32,
-    display_orientation: u32,
-    display_fixed_output: u32,
-    color: i16,
-    duplex: i16,
-    y_resolution: i16,
-    tt_option: i16,
-    collate: i16,
-    form_name: [u16; 32],
-    log_pixels: u16,
-    bits_per_pel: u32,
-    pels_width: u32,
-    pels_height: u32,
-    display_flags: u32,
-    display_frequency: u32,
-    icm_method: u32,
-    icm_intent: u32,
-    media_type: u32,
-    dither_type: u32,
-    reserved1: u32,
-    reserved2: u32,
-    panning_width: u32,
-    panning_height: u32,
+pub struct DevModeW {
+    pub device_name: [u16; 32],
+    pub spec_version: u16,
+    pub driver_version: u16,
+    pub size: u16,
+    pub driver_extra: u16,
+    pub fields: u32,
+    pub position_x: i32,
+    pub position_y: i32,
+    pub display_orientation: u32,
+    pub display_fixed_output: u32,
+    pub color: i16,
+    pub duplex: i16,
+    pub y_resolution: i16,
+    pub tt_option: i16,
+    pub collate: i16,
+    pub form_name: [u16; 32],
+    pub log_pixels: u16,
+    pub bits_per_pel: u32,
+    pub pels_width: u32,
+    pub pels_height: u32,
+    pub display_flags: u32,
+    pub display_frequency: u32,
+    pub icm_method: u32,
+    pub icm_intent: u32,
+    pub media_type: u32,
+    pub dither_type: u32,
+    pub reserved1: u32,
+    pub reserved2: u32,
+    pub panning_width: u32,
+    pub panning_height: u32,
 }
 
 /// `DEVMODEW`'s ABI size, which the API reads back out of `size`.
@@ -161,18 +161,18 @@ const DEV_MODE_SIZE: u16 = 220;
 const _: () = assert!(size_of::<DevModeW>() == DEV_MODE_SIZE as usize);
 
 /// `EnumDisplaySettingsW` mode selector for the current display mode.
-const ENUM_CURRENT_SETTINGS: u32 = 0xFFFF_FFFF;
+pub const ENUM_CURRENT_SETTINGS: u32 = 0xFFFF_FFFF;
 /// `EnumDisplaySettingsW` mode selector for the registry display mode.
-const ENUM_REGISTRY_SETTINGS: u32 = 0xFFFF_FFFE;
+pub const ENUM_REGISTRY_SETTINGS: u32 = 0xFFFF_FFFE;
 
 /// `DEVMODEW.dmFields` bit: `dmBitsPerPel` is set.
-const DM_BITSPERPEL: u32 = 0x0004_0000;
+pub const DM_BITSPERPEL: u32 = 0x0004_0000;
 /// `DEVMODEW.dmFields` bit: `dmPelsWidth` is set.
-const DM_PELSWIDTH: u32 = 0x0008_0000;
+pub const DM_PELSWIDTH: u32 = 0x0008_0000;
 /// `DEVMODEW.dmFields` bit: `dmPelsHeight` is set.
-const DM_PELSHEIGHT: u32 = 0x0010_0000;
+pub const DM_PELSHEIGHT: u32 = 0x0010_0000;
 /// `DEVMODEW.dmFields` bit: `dmDisplayFrequency` is set.
-const DM_DISPLAYFREQUENCY: u32 = 0x0040_0000;
+pub const DM_DISPLAYFREQUENCY: u32 = 0x0040_0000;
 /// `ChangeDisplaySettingsW` flag: a temporary mode, not written to the registry.
 const CDS_FULLSCREEN: u32 = 0x0000_0004;
 /// `ChangeDisplaySettingsW` return value for a mode that was applied.
@@ -299,7 +299,7 @@ pub fn enumerate_display_modes() -> Vec<DisplayModeInfo> {
 pub fn system_dpi() -> u32 {
     // SAFETY: `GetCurrentProcess` takes no arguments and returns the
     // current-process pseudo-handle.
-    let process = unsafe { crate::GetCurrentProcess() };
+    let process = unsafe { GetCurrentProcess() };
     // SAFETY: `process` is the current-process pseudo-handle, the one
     // process the call answers for.
     let dpi = unsafe { GetSystemDpiForProcess(process) };
@@ -452,6 +452,7 @@ pub fn restore_registry_mode() -> RegistryRestore {
     }
 }
 
+#[cfg(windows)]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn ChangeDisplaySettingsW(dev_mode: *mut DevModeW, flags: u32) -> i32;
@@ -483,18 +484,37 @@ unsafe extern "system" {
 // and route the 32-bit one through `#[link_name = "SetWindowLongW"]` so
 // the call site stays uniform. Window styles ride the same entry point:
 // they are 32-bit values either way, and both Windows and Wine truncate.
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(windows, target_pointer_width = "64"))]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SetWindowLongPtrW(hwnd: *mut c_void, index: i32, new_long: isize) -> isize;
 }
 
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(windows, target_pointer_width = "32"))]
 #[link(name = "user32")]
 unsafe extern "system" {
     #[link_name = "SetWindowLongW"]
     fn SetWindowLongPtrW(hwnd: *mut c_void, index: i32, new_long: isize) -> isize;
 }
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentProcess() -> *mut c_void;
+}
+
+#[cfg(not(windows))]
+use crate::host::win32::{
+    change_display_settings_w as ChangeDisplaySettingsW,
+    enum_display_settings_w as EnumDisplaySettingsW,
+    get_awareness_from_dpi_awareness_context as GetAwarenessFromDpiAwarenessContext,
+    get_current_process as GetCurrentProcess, get_monitor_info_w as GetMonitorInfoW,
+    get_system_dpi_for_process as GetSystemDpiForProcess,
+    get_window_dpi_awareness_context as GetWindowDpiAwarenessContext,
+    get_window_long_w as GetWindowLongW, get_window_rect as GetWindowRect, is_window as IsWindow,
+    is_zoomed as IsZoomed, monitor_from_point as MonitorFromPoint,
+    set_window_long_ptr_w as SetWindowLongPtrW, set_window_pos as SetWindowPos,
+};
 
 /// Set one of a window's `GWL_*` / `GWLP_*` longs, returning the previous value.
 pub fn set_window_long_ptr(hwnd: *mut c_void, index: i32, new: isize) -> isize {

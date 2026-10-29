@@ -7,8 +7,10 @@ license.workspace = true
 description.workspace = true
 authors.workspace = true
 
+# `cdylib` is `d3d9.dll`. The `rlib` is what the native host build
+# (`native/`) links into `libd3d9metal`; built for a PE target it goes unused.
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bitflags = { workspace = true }
@@ -20,6 +22,11 @@ rustc-hash = { workspace = true }
 snmalloc-rs = { workspace = true }
 xbr = { workspace = true }
 xxhash-rust = { workspace = true }
+
+# A native host build (any target but Windows) records frames as the PE side
+# does and adopts guest leases as the native side does, in one copy of the core.
+[target.'cfg(not(windows))'.dependencies]
+mtld3d-core = { workspace = true, features = ["native-host"] }
 
 [lints]
 workspace = true

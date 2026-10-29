@@ -40,10 +40,14 @@ use mtld3d_core::capture_chord::{self, CAPTURE_KEY};
 /// early with `D3DERR_DEVICENOTRESET` or a send failure, can take it too.
 static CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(windows)]
 #[link(name = "user32")]
 unsafe extern "system" {
     fn GetAsyncKeyState(vkey: i32) -> i16;
 }
+
+#[cfg(not(windows))]
+use crate::host::win32::get_async_key_state as GetAsyncKeyState;
 
 fn key_down(vkey: i32) -> bool {
     // SAFETY: `GetAsyncKeyState` is a thread-safe Win32 syscall taking an
