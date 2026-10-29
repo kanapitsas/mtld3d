@@ -2982,7 +2982,8 @@ impl FrameEncoder {
         if let Some(reused) = self.visibility.try_acquire_reusable(slots) {
             return Some(reused);
         }
-        let Some(mut backing) = PageBox::try_new_zeroed((slots * SLOT_BYTES) as usize) else {
+        let Some(mut backing) = PageBox::try_new_private_zeroed((slots * SLOT_BYTES) as usize)
+        else {
             mtld3d_shared::log_once_warn!(
                 target: LOG_TARGET,
                 "visibility buffer of {slots} slots: page allocation failed → the queries open \
@@ -3029,7 +3030,7 @@ impl FrameEncoder {
         let triangles = primitive_count
             .max(self.fan_index_buffer.triangles.saturating_mul(2))
             .clamp(FIRST_TRIANGLES, FAN_PATTERN_MAX_TRIANGLES);
-        let mut backing = PageBox::new_zeroed(fan_pattern_bytes(triangles));
+        let mut backing = PageBox::new_private_zeroed(fan_pattern_bytes(triangles));
         fill_fan_pattern_u16(backing.as_mut_slice(), triangles);
         let length = backing.len() as u64;
         let desc = BufferCreateDesc {
@@ -8221,7 +8222,7 @@ impl FrameEncoder {
         let padded_size = padded_pitch
             .checked_mul(num_blit_rows as usize)
             .expect("padded blit-source size overflow");
-        let mut padded = PageBox::new_uninit(padded_size);
+        let mut padded = PageBox::new_private_uninit(padded_size);
         // SAFETY: `start_row * src_pitch` is at most `source_end`, checked
         // above against the staging's logical length.
         let src_base = unsafe { staging.as_ptr().add(start_row * src_pitch) };
@@ -8504,7 +8505,7 @@ impl FrameEncoder {
         }
         // `bytesNoCopy` needs page-aligned backing, so the rows must land in a
         // `PageBox` (re-packing the source rows into the padded stride).
-        let mut staging = PageBox::new_uninit(padded_size);
+        let mut staging = PageBox::new_private_uninit(padded_size);
         let dst_base = staging.as_mut_ptr();
         let src_base = rows.as_ptr();
         for row in 0..height as usize {

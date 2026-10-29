@@ -514,7 +514,8 @@ impl PageBoxPool {
     }
 
     fn recycle_in(&self, kind: LaneKind, pb: PageBox) -> Option<PageBox> {
-        if !pb.is_native_owned() {
+        // The pool serves `Lock`, so it parks only pages the application may see.
+        if !pb.is_native_owned() || !pb.is_app_memory() {
             return Some(pb);
         }
         let cap_bytes = self.cap_bytes();

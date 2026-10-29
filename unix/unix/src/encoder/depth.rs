@@ -45,10 +45,10 @@ impl FrameEncoder {
             log::error!(target: super::LOG_TARGET, "depth upload: packed offset outside staging");
             return false;
         };
-        let mut depth = PageBox::new_zeroed(layout.depth_pitch * layout.height);
+        let mut depth = PageBox::new_private_zeroed(layout.depth_pitch * layout.height);
         let mut stencil = format
             .has_stencil()
-            .then(|| PageBox::new_zeroed(layout.stencil_pitch * layout.height));
+            .then(|| PageBox::new_private_zeroed(layout.stencil_pitch * layout.height));
         if !layout.unpack(
             format,
             source,

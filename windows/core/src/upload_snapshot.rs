@@ -202,7 +202,7 @@ impl UploadSnapshots {
             self.active = self.full.pop_front();
         } else if self.chunk_count() < MAX_CHUNKS {
             self.active = Some(Chunk {
-                pages: Arc::new(PageBox::try_new_zeroed(CHUNK_BYTES)?),
+                pages: Arc::new(PageBox::try_new_private_zeroed(CHUNK_BYTES)?),
                 last_seq: 0,
             });
         } else {

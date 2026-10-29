@@ -383,6 +383,70 @@ impl PageBox {
         }
     }
 
+    /// [`Self::new_uninit`] for pages only the layer reads, never handed to the application.
+    ///
+    /// The same allocation as `new_uninit` in every Wine build. A native host
+    /// build takes these from the layer's own allocator rather than the
+    /// host's application memory, which a host that runs the application in
+    /// an address window of its own has little of; nothing may hand such a
+    /// box to the application, and the recycle pool, which serves `Lock`, never
+    /// parks one ([`Self::is_app_memory`]).
+    ///
+    /// # Panics
+    ///
+    /// Same allocation-failure contract as `new_uninit`.
+    #[must_use]
+    pub fn new_private_uninit(logical_len: usize) -> Self {
+        Self::try_new_private(logical_len, false).expect("PageBox alloc failed")
+    }
+
+    /// [`Self::new_zeroed`] for pages only the layer reads; see [`Self::new_private_uninit`].
+    ///
+    /// # Panics
+    ///
+    /// Same allocation-failure contract as `new_uninit`.
+    #[must_use]
+    pub fn new_private_zeroed(logical_len: usize) -> Self {
+        Self::try_new_private(logical_len, true).expect("PageBox alloc failed")
+    }
+
+    /// [`Self::try_new_zeroed`] for pages only the layer reads; see [`Self::new_private_uninit`].
+    #[must_use]
+    pub fn try_new_private_zeroed(logical_len: usize) -> Option<Self> {
+        Self::try_new_private(logical_len, true)
+    }
+
+    /// Whether the application may be handed these pages.
+    ///
+    /// Every box in a Wine build, whose application shares the layer's
+    /// address space. In a native host build with a host installed, only
+    /// the boxes taken from the host's application memory.
+    #[cfg(feature = "native-host")]
+    #[must_use]
+    pub fn is_app_memory(&self) -> bool {
+        crate::native_host::get().is_none() || matches!(self.ownership, PageOwnership::Host)
+    }
+
+    /// Whether the application may be handed these pages: always, in a Wine build.
+    #[cfg(not(feature = "native-host"))]
+    #[must_use]
+    pub const fn is_app_memory(&self) -> bool {
+        true
+    }
+
+    fn try_new_private(logical_len: usize, zeroed: bool) -> Option<Self> {
+        let (len, layout) = Self::try_layout_for(logical_len)?;
+        let raw = if zeroed {
+            // SAFETY: `try_layout_for` returns a non-zero-size, page-aligned Layout.
+            unsafe { alloc::alloc_zeroed(layout) }
+        } else {
+            // SAFETY: as above.
+            unsafe { alloc::alloc(layout) }
+        };
+        let ptr = NonNull::new(raw)?;
+        Some(Self::adopt(ptr, len, logical_len, layout))
+    }
+
     /// Wrap a block of the native host's application memory and count it.
     ///
     /// In a native host build every page box is application memory: a `Lock`
