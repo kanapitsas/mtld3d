@@ -2042,8 +2042,13 @@ impl DeviceInner {
         if let Some(old_id) = self.cur_autogen_rt_ids[slot].take() {
             self.push_control(crate::device::GenerateMipmapsOrderedOp { old_id });
         }
-        self.bound_rt_mut()
-            .replace_render_target(slot, core::ptr::null_mut(), 0, 0);
+        if self
+            .bound_rt_mut()
+            .replace_render_target(slot, core::ptr::null_mut(), (0, 0), false)
+        {
+            // The slot's write mask in the draw snapshot no longer reads zero.
+            self.mark_snapshot_dirty(SnapshotDirty::RS);
+        }
         self.last_extra_rt_bindings[slot - 1] = None;
         self.push_control(crate::device::UnbindExtraColorOp {
             slot: u8::try_from(slot).expect("validated extra color slot"),
@@ -6419,6 +6424,24 @@ fn create_texture_path(info: &TextureCreateArgs) -> i32 {
         null_out(texture);
         return D3DERR_INVALIDCALL;
     }
+    // A NULL texture is a render target with no colour storage and nothing
+    // else: the shape `CheckDeviceFormat` offers it in.
+    // (`CreateOffscreenPlainSurface` refuses NULL before it gets here.)
+    if mtld3d_core::format::is_null_render_target(format)
+        && !mtld3d_core::format::null_render_target_usage_allowed(
+            usage,
+            mtld3d_types::D3DRTYPE_TEXTURE,
+        )
+    {
+        mtld3d_shared::log_once_warn_by!(
+            target: LOG_TARGET,
+            key: u64::from(usage),
+            "reject CreateTexture(format=NULL, usage={usage:#x}) → INVALIDCALL (NULL is a 2D \
+             render target only)"
+        );
+        null_out(texture);
+        return D3DERR_INVALIDCALL;
+    }
 
     // Past the extent the device reports, a texture Metal backs is refused:
     // Metal itself aborts the process on a descriptor past its own limit. A
@@ -6516,7 +6539,10 @@ fn create_texture_path(info: &TextureCreateArgs) -> i32 {
     // non-renderable colour attachment with an abort rather than a returned
     // error: a lenient create costs the process at the first draw into the
     // texture instead of costing the application one handled failure here.
-    if usage_rt && !crate::direct3d9::is_render_target_format_on_device(format, expand_packed16) {
+    if usage_rt
+        && !crate::direct3d9::is_render_target_format_on_device(format, expand_packed16)
+        && !mtld3d_core::format::is_null_render_target(format)
+    {
         mtld3d_shared::log_once_warn_by!(
             target: crate::LOG_TARGET,
             key: u64::from(format),
@@ -7057,6 +7083,14 @@ extern "system" fn device_create_volume_texture(
         null_out(texture);
         return D3DERR_INVALIDCALL;
     };
+    // NULL exists as a 2D render target alone, in no pool as a volume.
+    if mtld3d_core::format::is_null_render_target(format) {
+        mtld3d_shared::log_once_warn!(target: LOG_TARGET,
+            "reject CreateVolumeTexture(format=NULL) → INVALIDCALL (NULL is a 2D render target \
+             only)");
+        null_out(texture);
+        return D3DERR_INVALIDCALL;
+    }
     let Some(fmt) = crate::direct3d9::map_for_device(format, obj.inner().config().expand_packed16)
     else {
         mtld3d_shared::log_once_warn!(target: crate::LOG_TARGET,
@@ -7264,6 +7298,13 @@ extern "system" fn device_create_cube_texture(
     // formats, so this never fires in-game.
     let is_depth_fmt = mtld3d_core::format::is_depth_format(format);
     if (usage_ds && !is_depth_fmt) || (usage_rt && is_depth_fmt) {
+        null_out(texture);
+        return D3DERR_INVALIDCALL;
+    }
+    // NULL exists as a 2D render target alone.
+    if mtld3d_core::format::is_null_render_target(format) {
+        mtld3d_shared::log_once_warn!(target: LOG_TARGET,
+            "reject CreateCubeTexture(format=NULL) → INVALIDCALL (NULL is a 2D render target only)");
         null_out(texture);
         return D3DERR_INVALIDCALL;
     }
@@ -7676,6 +7717,25 @@ fn create_color_target_surface(
     if mapping.is_compressed() {
         return None;
     }
+    // A NULL surface is a single-sampled render target and nothing else: the
+    // shape `CheckDeviceFormat` offers it in, and `CheckDeviceMultiSampleType`
+    // offers it no multisample type but `D3DMULTISAMPLE_NONE`, the maskable
+    // and non-maskable ones alike.
+    if mtld3d_core::format::is_null_render_target(format)
+        && (!mtld3d_core::format::null_render_target_usage_allowed(
+            usage,
+            mtld3d_types::D3DRTYPE_SURFACE,
+        ) || multi_sample.multi_sample_type != mtld3d_types::D3DMULTISAMPLE_NONE)
+    {
+        mtld3d_shared::log_once_warn_by!(
+            target: crate::LOG_TARGET,
+            key: u64::from(usage),
+            "reject surface(format=NULL, usage={usage:#x}, ms={}) → INVALIDCALL (NULL is a \
+             single-sampled render target only)",
+            multi_sample.multi_sample_type
+        );
+        return None;
+    }
     // A create's usage has to agree with the answer `CheckDeviceFormat` gives
     // for the same format, and the two usages this fn serves ask different
     // questions of it.
@@ -7700,7 +7760,9 @@ fn create_color_target_surface(
     // family on a device without the native formats, and R8G8B8 on every
     // device.
     if usage & D3DUSAGE_RENDERTARGET != 0 {
-        if !crate::direct3d9::is_render_target_format_on_device(format, expand_packed16) {
+        if !crate::direct3d9::is_render_target_format_on_device(format, expand_packed16)
+            && !mtld3d_core::format::is_null_render_target(format)
+        {
             mtld3d_shared::log_once_warn_by!(
                 target: crate::LOG_TARGET,
                 key: u64::from(format),
@@ -7834,6 +7896,14 @@ extern "system" fn device_create_render_target(
             "reject CreateRenderTarget({width}x{height}, ms={}) → INVALIDCALL (a multisampled render target cannot be lockable)",
             multi_sample.multi_sample_type
         );
+        null_out(surface);
+        return D3DERR_INVALIDCALL;
+    }
+    // A NULL target has no colour storage for a lock to map.
+    if lockable != 0 && mtld3d_core::format::is_null_render_target(format) {
+        mtld3d_shared::log_once_warn!(target: LOG_TARGET,
+            "reject CreateRenderTarget(format=NULL, lockable) → INVALIDCALL (a NULL target has \
+             no colour to lock)");
         null_out(surface);
         return D3DERR_INVALIDCALL;
     }
@@ -9077,6 +9147,14 @@ extern "system" fn device_stretch_rect(
         );
         return D3DERR_INVALIDCALL;
     };
+    // A NULL target holds no colour, so it is no source and no destination.
+    if mtld3d_core::format::is_null_render_target(src_info.format)
+        || mtld3d_core::format::is_null_render_target(dst_info.format)
+    {
+        mtld3d_shared::log_once_warn!(target: crate::LOG_TARGET,
+            "reject StretchRect: a NULL render target has no colour to copy → INVALIDCALL");
+        return D3DERR_INVALIDCALL;
+    }
 
     // Depth-stencil StretchRect: if either surface is a
     // depth-stencil, BOTH must be — and they must share the Metal depth format
@@ -10051,6 +10129,10 @@ extern "system" fn device_color_fill(
             mtld3d_core::format::format_name(info.format));
         return D3D_OK;
     }
+    // A NULL target has no colour to fill: the call succeeds and changes nothing.
+    if mtld3d_core::format::is_null_render_target(info.format) {
+        return D3D_OK;
+    }
     let extent = (info.width, info.height);
     let Some(region) = color_fill_region(rect, extent) else {
         return D3D_OK;
@@ -10091,6 +10173,14 @@ extern "system" fn device_create_offscreen_plain_surface(
     let _api = device_api_lock(this);
     let _timer = device_timer(this, DeviceSubCategory::Misc);
     if surface.is_null() || width == 0 || height == 0 {
+        null_out(surface);
+        return D3DERR_INVALIDCALL;
+    }
+    // NULL exists as a render target alone, in no pool as a plain surface.
+    if mtld3d_core::format::is_null_render_target(format) {
+        mtld3d_shared::log_once_warn!(target: LOG_TARGET,
+            "reject CreateOffscreenPlainSurface(format=NULL) → INVALIDCALL (NULL is a 2D render \
+             target only)");
         null_out(surface);
         return D3DERR_INVALIDCALL;
     }
@@ -10444,8 +10534,17 @@ extern "system" fn device_set_render_target(
     }
     dev.cur_autogen_rt_ids[slot] = new_autogen;
 
-    dev.bound_rt_mut()
-        .replace_render_target(slot, surf, desc.width, desc.height);
+    // A NULL target takes no colour write: the draw snapshot clears its
+    // slot's write mask, so a change of which slots hold one makes the RS
+    // section stale (render target 0's bind marks it below in any case).
+    if dev.bound_rt_mut().replace_render_target(
+        slot,
+        surf,
+        (desc.width, desc.height),
+        mtld3d_core::format::is_null_render_target(desc.format),
+    ) {
+        dev.mark_snapshot_dirty(SnapshotDirty::RS);
+    }
 
     // Remember the applied binding so a mid-frame readback flush can re-assert
     // it into the fresh frame (the encoder's pass state resets to the
@@ -13208,6 +13307,17 @@ fn emit_snapshot_deltas(obj: &Direct3DDevice9) {
         // byte when the value is inside that state's enum space, the D3D9
         // default when it is not.
         let enum_rs = |state: u32| mtld3d_core::render_state::enum_value(rs, state);
+        // A slot holding a NULL target takes no colour write whatever its
+        // `COLORWRITEENABLE` says: the target has no colour storage, and the
+        // pass whose draws all write no colour drops its attachment.
+        let null_color_mask = dev.bound_rt().null_color_mask();
+        let color_write_mask = |state: u32, slot: u8| {
+            if null_color_mask & (1 << slot) == 0 {
+                enum_rs(state)
+            } else {
+                0
+            }
+        };
 
         let mut prs_flags = PipelineRsFlags::empty();
         prs_flags.set(
@@ -13230,11 +13340,11 @@ fn emit_snapshot_deltas(obj: &Direct3DDevice9) {
             src_blend_alpha: enum_rs(D3DRS_SRCBLENDALPHA),
             dst_blend_alpha: enum_rs(D3DRS_DESTBLENDALPHA),
             blend_op_alpha: enum_rs(D3DRS_BLENDOPALPHA),
-            color_write_mask: enum_rs(D3DRS_COLORWRITEENABLE),
+            color_write_mask: color_write_mask(D3DRS_COLORWRITEENABLE, 0),
             color_write_mask_ext: [
-                enum_rs(D3DRS_COLORWRITEENABLE1),
-                enum_rs(D3DRS_COLORWRITEENABLE2),
-                enum_rs(D3DRS_COLORWRITEENABLE3),
+                color_write_mask(D3DRS_COLORWRITEENABLE1, 1),
+                color_write_mask(D3DRS_COLORWRITEENABLE2, 2),
+                color_write_mask(D3DRS_COLORWRITEENABLE3, 3),
             ],
         };
 

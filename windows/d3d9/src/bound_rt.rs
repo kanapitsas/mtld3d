@@ -24,6 +24,11 @@ pub struct BoundRt {
     render_targets: [CachedComPtr<Direct3DSurface9, Bound>; RENDER_TARGET_SLOTS],
     rt_width: u32,
     rt_height: u32,
+    /// Bit `i` set while the surface bound at render-target slot `i` is a `NULL` target.
+    ///
+    /// Such a target takes no colour write, so the draw snapshot clears that
+    /// slot's write mask while the bit is set.
+    null_color_mask: u8,
     /// Bound depth-stencil slot.
     ///
     /// Same `Bound` semantics as `render_targets` above.
@@ -36,6 +41,7 @@ impl BoundRt {
             render_targets: [const { CachedComPtr::null() }; RENDER_TARGET_SLOTS],
             rt_width: backbuffer_width,
             rt_height: backbuffer_height,
+            null_color_mask: 0,
             depth_stencil: CachedComPtr::null(),
         }
     }
@@ -44,14 +50,16 @@ impl BoundRt {
     ///
     /// `new` may be null (which disables the slot). `width`/`height` track
     /// the new surface dimensions for callers that query render target 0's
-    /// size; they are ignored for the other slots.
+    /// size; they are ignored for the other slots. `null_color` says `new`
+    /// is a `NULL` target. Returns whether that changed the slots that take
+    /// no colour write, which the draw snapshot's write masks follow.
     pub fn replace_render_target(
         &mut self,
         index: usize,
         new: *mut Direct3DSurface9,
-        width: u32,
-        height: u32,
-    ) {
+        (width, height): (u32, u32),
+        null_color: bool,
+    ) -> bool {
         // SAFETY: `new` came from the IDirect3DDevice9 vtable layer; the
         // caller (the SetRenderTarget thunk) guarantees it is either null
         // or a valid *mut Direct3DSurface9.
@@ -60,6 +68,19 @@ impl BoundRt {
             self.rt_width = width;
             self.rt_height = height;
         }
+        let before = self.null_color_mask;
+        let bit = 1u8 << index;
+        if null_color {
+            self.null_color_mask |= bit;
+        } else {
+            self.null_color_mask &= !bit;
+        }
+        self.null_color_mask != before
+    }
+
+    /// Bit `i` set while render-target slot `i` holds a `NULL` target.
+    pub const fn null_color_mask(&self) -> u8 {
+        self.null_color_mask
     }
 
     /// Swap the bound depth/stencil surface (COM-ref-correct).
@@ -83,6 +104,7 @@ impl BoundRt {
         self.depth_stencil = CachedComPtr::null();
         self.rt_width = 0;
         self.rt_height = 0;
+        self.null_color_mask = 0;
     }
 
     /// Currently bound depth-stencil surface, or null when the app has not bound one.

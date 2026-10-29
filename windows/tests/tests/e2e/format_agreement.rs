@@ -51,10 +51,10 @@ const fn fourcc(code: [u8; 4]) -> u32 {
 
 /// The FOURCC formats the sweeps walk besides the numbered ones.
 ///
-/// The block-compressed and YUV formats, the vendor depth formats, and the
-/// vendor codes titles probe for without the layer serving them (`ATI2`,
-/// `RAWZ`, `NULL`, `INST`, `NVDB`, `A2M0`, `A2M1`, the packed RGBG pair and
-/// `MET1`).
+/// The block-compressed and YUV formats, the vendor depth formats, `NULL`
+/// (the render target with no colour storage), and the vendor codes titles
+/// probe for without the layer serving them (`ATI2`, `RAWZ`, `INST`, `NVDB`,
+/// `A2M0`, `A2M1`, the packed RGBG pair and `MET1`).
 const FOURCCS: [u32; 24] = [
     D3DFMT_DXT1,
     D3DFMT_DXT2,

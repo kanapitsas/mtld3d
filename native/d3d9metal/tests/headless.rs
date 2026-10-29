@@ -719,3 +719,530 @@ fn two_devices_share_a_layer_in_either_release_order() {
     assert_eq!(unsafe { release(d3d) }, 0, "the interface's last reference");
     drop(layer);
 }
+
+/// `vs_2_0 { dcl_position v0; dcl_texcoord0 v1; mov oPos, v0; mov oT0, v1; }`.
+#[rustfmt::skip]
+const VS_TEXCOORD: [u32; 14] = [
+    0xFFFE_0200,
+    0x0200_001F, 0x8000_0000, 0x900F_0000,
+    0x0200_001F, 0x8000_0005, 0x900F_0001,
+    0x0200_0001, 0xC00F_0000, 0x90E4_0000,
+    0x0200_0001, 0xE00F_0000, 0x90E4_0001,
+    0x0000_FFFF,
+];
+
+/// `ps_2_0 { dcl t0.xy; dcl_2d s0; texld r0, t0, s0; mov oC0, r0; }`, the sampled texel.
+#[rustfmt::skip]
+const PS_SAMPLE: [u32; 15] = [
+    0xFFFF_0200,
+    0x0200_001F, 0x8000_0000, 0xB003_0000,
+    0x0200_001F, 0x9000_0000, 0xA00F_0800,
+    0x0300_0042, 0x800F_0000, 0xB0E4_0000, 0xA0E4_0800,
+    0x0200_0001, 0x800F_0800, 0x80E4_0000,
+    0x0000_FFFF,
+];
+
+/// A write-only default-pool vertex buffer of `fvf` holding `bytes`.
+///
+/// # Safety
+///
+/// `device` is a live `IDirect3DDevice9`.
+unsafe fn vertex_buffer(device: *mut c_void, bytes: &[u8], fvf: u32) -> *mut c_void {
+    // SAFETY: the caller's contract.
+    let dev = unsafe { vtbl::<IDirect3DDevice9Vtbl>(device) };
+    let mut vb: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.create_vertex_buffer)(
+            device,
+            u32::try_from(bytes.len()).unwrap(),
+            D3DUSAGE_WRITEONLY,
+            fvf,
+            D3DPOOL_DEFAULT,
+            &raw mut vb,
+            core::ptr::null_mut(),
+        ),
+        "CreateVertexBuffer"
+    );
+    // SAFETY: `vb` is the live vertex buffer just created.
+    let vb_vtbl = unsafe { vtbl::<IDirect3DVertexBuffer9Vtbl>(vb) };
+    let mut data: *mut c_void = core::ptr::null_mut();
+    check!((vb_vtbl.lock)(vb, 0, 0, &raw mut data, 0), "Lock");
+    // SAFETY: the lock covers the whole buffer, `bytes.len()` writable bytes.
+    unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), data.cast::<u8>(), bytes.len()) };
+    check!((vb_vtbl.unlock)(vb), "Unlock");
+    vb
+}
+
+/// The little-endian bytes of `floats` followed, per vertex, by nothing else.
+fn float_bytes(floats: &[f32]) -> Vec<u8> {
+    floats.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// The red channel at `(x, y)` and at `(1, 1)` of `device`'s back buffer.
+///
+/// # Safety
+///
+/// `device` is a live `IDirect3DDevice9` with a `SIZE`-square back buffer.
+unsafe fn read_back_red(device: *mut c_void, (x, y): (u32, u32)) -> (u32, u32) {
+    // SAFETY: the caller's contract.
+    let dev = unsafe { vtbl::<IDirect3DDevice9Vtbl>(device) };
+    let mut back: *mut c_void = core::ptr::null_mut();
+    let mut readback: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.get_back_buffer)(device, 0, 0, 0, &raw mut back),
+        "GetBackBuffer"
+    );
+    check!(
+        (dev.create_offscreen_plain_surface)(
+            device,
+            SIZE,
+            SIZE,
+            D3DFMT_A8R8G8B8,
+            D3DPOOL_SYSTEMMEM,
+            &raw mut readback,
+            core::ptr::null_mut(),
+        ),
+        "CreateOffscreenPlainSurface"
+    );
+    check!(
+        (dev.get_render_target_data)(device, back, readback),
+        "GetRenderTargetData"
+    );
+    // SAFETY: `readback` is the live surface just created.
+    let surface = unsafe { vtbl::<IDirect3DSurface9Vtbl>(readback) };
+    let mut rect = D3DLOCKED_RECT {
+        pitch: 0,
+        bits: core::ptr::null_mut(),
+    };
+    check!(
+        (surface.lock_rect)(
+            readback,
+            (&raw mut rect).cast(),
+            core::ptr::null(),
+            D3DLOCK_READONLY
+        ),
+        "LockRect"
+    );
+    // SAFETY: the lock is live on a SIZE-square A8R8G8B8 surface.
+    let at = unsafe { pixel(&rect, x, y) };
+    // SAFETY: as above.
+    let corner = unsafe { pixel(&rect, 1, 1) };
+    check!((surface.unlock_rect)(readback), "UnlockRect");
+    for child in [readback, back] {
+        // SAFETY: this function holds one reference on each.
+        unsafe { release(child) };
+    }
+    ((at >> 16) & 0xFF, (corner >> 16) & 0xFF)
+}
+
+/// A depth-only pass into a sampleable depth texture, with a `NULL` render target 0.
+///
+/// What Source does for its shadow and depth passes: the capability answers
+/// offer `NULL` as a 2D render target only, a `NULL` render target and a
+/// `NULL` texture level both bind as render target 0, the draw writes depth
+/// and no colour, and sampling the `INTZ` / `DF24` texture afterwards reads
+/// the depth the draw wrote back.
+#[test]
+fn a_null_render_target_runs_a_depth_only_pass() {
+    use mtld3d_types::{
+        D3DCLEAR_ZBUFFER, D3DCMP_LESS, D3DERR_INVALIDCALL, D3DERR_NOTAVAILABLE, D3DFMT_D24S8,
+        D3DFMT_DF24, D3DFMT_INTZ, D3DFMT_NULL, D3DFVF_TEX1, D3DMULTISAMPLE_NONE, D3DRS_ZENABLE,
+        D3DRS_ZFUNC, D3DRS_ZWRITEENABLE, D3DRTYPE_CUBETEXTURE, D3DRTYPE_SURFACE, D3DRTYPE_TEXTURE,
+        D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DTEXF_POINT, D3DUSAGE_DEPTHSTENCIL,
+        D3DUSAGE_RENDERTARGET, IDirect3DTexture9Vtbl,
+    };
+
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let layer = make_layer();
+    LAYER.store(Retained::as_ptr(&layer) as usize, Ordering::Release);
+    init_host();
+    let d3d = d3d9metal::direct3d_create9(32);
+    assert!(!d3d.is_null(), "Direct3DCreate9");
+    // SAFETY: `d3d` is the live IDirect3D9 just created.
+    let d3d_vtbl = unsafe { vtbl::<IDirect3D9Vtbl>(d3d) };
+    let format_answer = |usage: u32, rtype: u32| {
+        // SAFETY: vtable call on the live interface with plain arguments.
+        unsafe {
+            (d3d_vtbl.check_device_format)(
+                d3d,
+                0,
+                D3DDEVTYPE_HAL,
+                D3DFMT_X8R8G8B8,
+                usage,
+                rtype,
+                D3DFMT_NULL,
+            )
+        }
+    };
+    assert_eq!(format_answer(D3DUSAGE_RENDERTARGET, D3DRTYPE_SURFACE), 0);
+    assert_eq!(format_answer(D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE), 0);
+    assert_eq!(format_answer(0, D3DRTYPE_TEXTURE), D3DERR_NOTAVAILABLE);
+    assert_eq!(
+        format_answer(D3DUSAGE_RENDERTARGET, D3DRTYPE_CUBETEXTURE),
+        D3DERR_NOTAVAILABLE
+    );
+    // SAFETY: vtable call on the live interface with plain arguments.
+    let matched = unsafe {
+        (d3d_vtbl.check_depth_stencil_match)(
+            d3d,
+            0,
+            D3DDEVTYPE_HAL,
+            D3DFMT_X8R8G8B8,
+            D3DFMT_NULL,
+            D3DFMT_D24S8,
+        )
+    };
+    assert_eq!(matched, 0, "CheckDepthStencilMatch(NULL, D24S8)");
+
+    // SAFETY: `d3d` is live.
+    let device = unsafe { create_device(d3d, HWND) };
+    // SAFETY: `device` is the live IDirect3DDevice9 just created.
+    let dev = unsafe { vtbl::<IDirect3DDevice9Vtbl>(device) };
+
+    // NULL creates in the shape the answers offer and in no other.
+    let mut refused: *mut c_void = core::ptr::null_mut();
+    // SAFETY: vtable call with a live out-param.
+    let hr = unsafe {
+        (dev.create_texture)(
+            device,
+            SIZE,
+            SIZE,
+            1,
+            0,
+            D3DFMT_NULL,
+            D3DPOOL_DEFAULT,
+            &raw mut refused,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(
+        hr, D3DERR_INVALIDCALL,
+        "a NULL texture with no target usage"
+    );
+    // SAFETY: vtable call with a live out-param.
+    let hr = unsafe {
+        (dev.create_offscreen_plain_surface)(
+            device,
+            SIZE,
+            SIZE,
+            D3DFMT_NULL,
+            D3DPOOL_SYSTEMMEM,
+            &raw mut refused,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(hr, D3DERR_INVALIDCALL, "a NULL offscreen plain surface");
+    // Neither lockable nor multisampled, the non-maskable type included,
+    // which `CheckDeviceMultiSampleType` refuses NULL as well.
+    for (multi_sample, lockable, what) in [
+        (D3DMULTISAMPLE_NONE, 1, "a lockable NULL render target"),
+        (
+            mtld3d_types::D3DMULTISAMPLE_NONMASKABLE,
+            0,
+            "a non-maskable multisampled NULL render target",
+        ),
+    ] {
+        // SAFETY: vtable call with a live out-param.
+        let hr = unsafe {
+            (dev.create_render_target)(
+                device,
+                SIZE,
+                SIZE,
+                D3DFMT_NULL,
+                multi_sample,
+                0,
+                lockable,
+                &raw mut refused,
+                core::ptr::null_mut(),
+            )
+        };
+        assert_eq!(hr, D3DERR_INVALIDCALL, "{what}");
+    }
+    assert!(refused.is_null());
+
+    let mut null_surface: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.create_render_target)(
+            device,
+            SIZE,
+            SIZE,
+            D3DFMT_NULL,
+            D3DMULTISAMPLE_NONE,
+            0,
+            0,
+            &raw mut null_surface,
+            core::ptr::null_mut(),
+        ),
+        "CreateRenderTarget(NULL)"
+    );
+    let mut null_texture: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.create_texture)(
+            device,
+            SIZE,
+            SIZE,
+            1,
+            D3DUSAGE_RENDERTARGET,
+            D3DFMT_NULL,
+            D3DPOOL_DEFAULT,
+            &raw mut null_texture,
+            core::ptr::null_mut(),
+        ),
+        "CreateTexture(NULL, RENDERTARGET)"
+    );
+    // SAFETY: `null_texture` is the live texture just created.
+    let null_texture_vtbl = unsafe { vtbl::<IDirect3DTexture9Vtbl>(null_texture) };
+    let mut null_level: *mut c_void = core::ptr::null_mut();
+    check!(
+        (null_texture_vtbl.get_surface_level)(null_texture, 0, &raw mut null_level),
+        "GetSurfaceLevel(NULL texture)"
+    );
+    let mut back: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.get_back_buffer)(device, 0, 0, 0, &raw mut back),
+        "GetBackBuffer"
+    );
+    // A NULL target has no colour to copy or fill.
+    // SAFETY: both surfaces are live and of the device.
+    let hr = unsafe {
+        (dev.stretch_rect)(
+            device,
+            null_surface,
+            core::ptr::null(),
+            back,
+            core::ptr::null(),
+            D3DTEXF_POINT,
+        )
+    };
+    assert_eq!(hr, D3DERR_INVALIDCALL, "StretchRect from NULL");
+    check!(
+        (dev.color_fill)(device, null_surface, core::ptr::null(), GREEN),
+        "ColorFill(NULL)"
+    );
+
+    // The depth pass's triangle, at depth 0.25, and the quad that samples it.
+    let triangle = vertex_buffer_bytes_color(&[
+        (-0.5, -0.5, 0.25, GREEN),
+        (0.0, 0.5, 0.25, GREEN),
+        (0.5, -0.5, 0.25, GREEN),
+    ]);
+    // SAFETY: `device` is live.
+    let triangle_vb = unsafe { vertex_buffer(device, &triangle, D3DFVF_XYZ | D3DFVF_DIFFUSE) };
+    #[rustfmt::skip]
+    let quad = float_bytes(&[
+        -1.0, 1.0, 0.5, 0.0, 0.0,
+        1.0, 1.0, 0.5, 1.0, 0.0,
+        -1.0, -1.0, 0.5, 0.0, 1.0,
+        1.0, 1.0, 0.5, 1.0, 0.0,
+        1.0, -1.0, 0.5, 1.0, 1.0,
+        -1.0, -1.0, 0.5, 0.0, 1.0,
+    ]);
+    // SAFETY: `device` is live.
+    let quad_vb = unsafe { vertex_buffer(device, &quad, D3DFVF_XYZ | D3DFVF_TEX1) };
+    let mut shaders = [core::ptr::null_mut::<c_void>(); 4];
+    check!(
+        (dev.create_vertex_shader)(device, VS.as_ptr(), &raw mut shaders[0]),
+        "CreateVertexShader"
+    );
+    check!(
+        (dev.create_pixel_shader)(device, PS.as_ptr(), &raw mut shaders[1]),
+        "CreatePixelShader"
+    );
+    check!(
+        (dev.create_vertex_shader)(device, VS_TEXCOORD.as_ptr(), &raw mut shaders[2]),
+        "CreateVertexShader(texcoord)"
+    );
+    check!(
+        (dev.create_pixel_shader)(device, PS_SAMPLE.as_ptr(), &raw mut shaders[3]),
+        "CreatePixelShader(sample)"
+    );
+    check!(
+        (dev.set_render_state)(device, D3DRS_LIGHTING, 0),
+        "SetRenderState(LIGHTING)"
+    );
+    check!(
+        (dev.set_render_state)(device, D3DRS_CULLMODE, D3DCULL_NONE),
+        "SetRenderState(CULLMODE)"
+    );
+    for filter in [D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER] {
+        check!(
+            (dev.set_sampler_state)(device, 0, filter, D3DTEXF_POINT),
+            "SetSamplerState"
+        );
+    }
+
+    for (depth_format, target) in [(D3DFMT_INTZ, null_surface), (D3DFMT_DF24, null_level)] {
+        let mut depth: *mut c_void = core::ptr::null_mut();
+        check!(
+            (dev.create_texture)(
+                device,
+                SIZE,
+                SIZE,
+                1,
+                D3DUSAGE_DEPTHSTENCIL,
+                depth_format,
+                D3DPOOL_DEFAULT,
+                &raw mut depth,
+                core::ptr::null_mut(),
+            ),
+            "CreateTexture(depth)"
+        );
+        // SAFETY: `depth` is the live texture just created.
+        let depth_vtbl = unsafe { vtbl::<IDirect3DTexture9Vtbl>(depth) };
+        let mut depth_level: *mut c_void = core::ptr::null_mut();
+        check!(
+            (depth_vtbl.get_surface_level)(depth, 0, &raw mut depth_level),
+            "GetSurfaceLevel(depth)"
+        );
+
+        // The back buffer goes red first: the depth pass must leave it so.
+        check!(
+            (dev.clear)(device, 0, core::ptr::null(), D3DCLEAR_TARGET, RED, 1.0, 0),
+            "Clear(back buffer)"
+        );
+        check!(
+            (dev.set_render_target)(device, 0, target),
+            "SetRenderTarget(NULL)"
+        );
+        check!(
+            (dev.set_depth_stencil_surface)(device, depth_level),
+            "SetDepthStencilSurface"
+        );
+        check!(
+            (dev.clear)(device, 0, core::ptr::null(), D3DCLEAR_ZBUFFER, 0, 1.0, 0),
+            "Clear(depth)"
+        );
+        check!((dev.begin_scene)(device), "BeginScene");
+        check!(
+            (dev.set_render_state)(device, D3DRS_ZENABLE, 1),
+            "SetRenderState(ZENABLE)"
+        );
+        check!(
+            (dev.set_render_state)(device, D3DRS_ZWRITEENABLE, 1),
+            "SetRenderState(ZWRITEENABLE)"
+        );
+        check!(
+            (dev.set_render_state)(device, D3DRS_ZFUNC, D3DCMP_LESS),
+            "SetRenderState(ZFUNC)"
+        );
+        check!(
+            (dev.set_vertex_shader)(device, shaders[0]),
+            "SetVertexShader"
+        );
+        check!((dev.set_pixel_shader)(device, shaders[1]), "SetPixelShader");
+        check!((dev.set_fvf)(device, D3DFVF_XYZ | D3DFVF_DIFFUSE), "SetFVF");
+        check!(
+            (dev.set_stream_source)(device, 0, triangle_vb, 0, 16),
+            "SetStreamSource"
+        );
+        check!(
+            (dev.draw_primitive)(device, D3DPT_TRIANGLELIST, 0, 1),
+            "DrawPrimitive(depth)"
+        );
+
+        // Back to the back buffer, and sample what the pass wrote.
+        check!(
+            (dev.set_render_target)(device, 0, back),
+            "SetRenderTarget(back buffer)"
+        );
+        check!(
+            (dev.set_depth_stencil_surface)(device, core::ptr::null_mut()),
+            "SetDepthStencilSurface(none)"
+        );
+        check!(
+            (dev.set_render_state)(device, D3DRS_ZENABLE, 0),
+            "SetRenderState(ZENABLE off)"
+        );
+        let (_, untouched) = {
+            check!((dev.end_scene)(device), "EndScene");
+            // SAFETY: the device is live and SIZE-square.
+            let read = unsafe { read_back_red(device, (SIZE / 2, SIZE / 2 + 4)) };
+            check!((dev.begin_scene)(device), "BeginScene");
+            read
+        };
+        assert_eq!(
+            untouched, 0xFF,
+            "the depth-only pass left the back buffer's red alone"
+        );
+        check!((dev.set_texture)(device, 0, depth), "SetTexture(depth)");
+        check!(
+            (dev.set_vertex_shader)(device, shaders[2]),
+            "SetVertexShader(texcoord)"
+        );
+        check!(
+            (dev.set_pixel_shader)(device, shaders[3]),
+            "SetPixelShader(sample)"
+        );
+        check!((dev.set_fvf)(device, D3DFVF_XYZ | D3DFVF_TEX1), "SetFVF");
+        check!(
+            (dev.set_stream_source)(device, 0, quad_vb, 0, 20),
+            "SetStreamSource(quad)"
+        );
+        check!(
+            (dev.draw_primitive)(device, D3DPT_TRIANGLELIST, 0, 2),
+            "DrawPrimitive(quad)"
+        );
+        check!((dev.end_scene)(device), "EndScene");
+        check!(
+            (dev.set_texture)(device, 0, core::ptr::null_mut()),
+            "SetTexture(none)"
+        );
+
+        // SAFETY: the device is live and SIZE-square.
+        let (inside, corner) = unsafe { read_back_red(device, (SIZE / 2, SIZE / 2 + 4)) };
+        // Depth 0.25 as an 8-bit channel: 0.25 * 255, rounded.
+        let expected = 64_u32;
+        assert!(
+            inside.abs_diff(expected) <= 2,
+            "{}: depth under the triangle reads {inside}, expected about {expected}",
+            mtld3d_core::format::format_name(depth_format)
+        );
+        assert_eq!(
+            corner,
+            0xFF,
+            "{}: the cleared depth reads 1.0 outside the triangle",
+            mtld3d_core::format::format_name(depth_format)
+        );
+        for child in [depth_level, depth] {
+            // SAFETY: the test holds one reference on each.
+            unsafe { release(child) };
+        }
+    }
+
+    let children = [
+        back,
+        null_level,
+        null_texture,
+        null_surface,
+        triangle_vb,
+        quad_vb,
+    ];
+    for child in children.into_iter().chain(shaders) {
+        // SAFETY: the test holds one reference on each.
+        unsafe { release(child) };
+    }
+    // SAFETY: the test's reference on the device, its last.
+    let left = unsafe { release(device) };
+    assert_eq!(left, 0, "the device's last reference");
+    // SAFETY: the test's reference on the interface, its last.
+    let left = unsafe { release(d3d) };
+    assert_eq!(left, 0, "the interface's last reference");
+    drop(layer);
+}
+
+/// The bytes of `XYZ | DIFFUSE` vertices.
+fn vertex_buffer_bytes_color(vertices: &[(f32, f32, f32, u32)]) -> Vec<u8> {
+    vertices
+        .iter()
+        .flat_map(|&(x, y, z, color)| {
+            let mut bytes = [0_u8; 16];
+            bytes[0..4].copy_from_slice(&x.to_le_bytes());
+            bytes[4..8].copy_from_slice(&y.to_le_bytes());
+            bytes[8..12].copy_from_slice(&z.to_le_bytes());
+            bytes[12..16].copy_from_slice(&color.to_le_bytes());
+            bytes
+        })
+        .collect()
+}

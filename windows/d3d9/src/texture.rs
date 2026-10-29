@@ -1192,6 +1192,11 @@ impl TextureInner {
     /// while its per-level arrays keep the logical dimensions `GetLevelDesc`
     /// reports.
     pub fn allocated_bytes(&self) -> u64 {
+        // A NULL target has no colour storage in D3D9, so it is charged none:
+        // its one-byte backing is a substitution of ours.
+        if mtld3d_core::format::is_null_render_target(self.d3d_format) {
+            return 0;
+        }
         let bh = self.block_h.max(1);
         let one_face = (0..self.levels as usize)
             .map(|level| {

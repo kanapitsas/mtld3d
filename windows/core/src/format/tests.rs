@@ -1586,3 +1586,88 @@ fn back_buffer_formats_are_the_d3d9_set() {
         true
     ));
 }
+
+#[test]
+fn null_is_a_render_target_storage_no_colour_predicate_offers() {
+    use mtld3d_types::D3DFMT_NULL;
+
+    use super::{
+        is_null_render_target, is_render_target_format, is_render_target_format_device,
+        null_render_target_storage_mapping,
+    };
+
+    assert!(is_null_render_target(D3DFMT_NULL));
+    assert!(!is_null_render_target(D3DFMT_A8R8G8B8));
+    assert_eq!(format_name(D3DFMT_NULL), "NULL");
+    // Bound and sized like any target: the narrowest renderable colour
+    // format, one byte per texel, no alpha to blend against.
+    let mapping = map_d3d_format(D3DFMT_NULL).expect("NULL is backed");
+    assert_eq!(mapping.metal_pixel_format(), PixelFormat::R8Unorm);
+    assert_eq!(mapping.bytes_per_pixel(), 1);
+    assert!(!mapping.has_alpha());
+    assert!(!mapping.is_compressed());
+    assert_eq!(
+        map_d3d_format(D3DFMT_NULL).map(|m| m.metal_pixel_format()),
+        Some(null_render_target_storage_mapping().metal_pixel_format())
+    );
+    // No colour answer offers it: the texture, cube and volume answers and
+    // the generic render-target family stay closed, so only the create gates
+    // that name it let it through.
+    assert!(!is_mapped_color_format(D3DFMT_NULL));
+    assert!(!is_volume_texture_format(D3DFMT_NULL));
+    assert!(!is_render_target_format(D3DFMT_NULL));
+    assert!(!is_render_target_format_device(D3DFMT_NULL, true));
+    assert!(!is_depth_format(D3DFMT_NULL));
+    // D3D9 charges a target with no colour storage nothing.
+    assert_eq!(surface_bytes(256, 256, D3DFMT_NULL), 0);
+}
+
+#[test]
+fn null_exists_as_a_2d_render_target_alone() {
+    use super::null_render_target_usage_allowed;
+
+    for rtype in [D3DRTYPE_SURFACE, D3DRTYPE_TEXTURE] {
+        assert!(null_render_target_usage_allowed(
+            D3DUSAGE_RENDERTARGET,
+            rtype
+        ));
+        assert!(null_render_target_usage_allowed(
+            D3DUSAGE_RENDERTARGET | D3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING,
+            rtype
+        ));
+        // A bit D3D9 strips before it validates rides through.
+        assert!(null_render_target_usage_allowed(
+            D3DUSAGE_RENDERTARGET | D3DUSAGE_WRITEONLY,
+            rtype
+        ));
+        assert!(!null_render_target_usage_allowed(0, rtype), "no target bit");
+        for extra in [
+            D3DUSAGE_DEPTHSTENCIL,
+            D3DUSAGE_AUTOGENMIPMAP,
+            D3DUSAGE_DYNAMIC,
+            D3DUSAGE_QUERY_FILTER,
+            D3DUSAGE_QUERY_SRGBREAD,
+            D3DUSAGE_QUERY_SRGBWRITE,
+            D3DUSAGE_QUERY_VERTEXTEXTURE,
+            D3DUSAGE_QUERY_WRAPANDMIP,
+            D3DUSAGE_QUERY_LEGACYBUMPMAP,
+        ] {
+            assert!(
+                !null_render_target_usage_allowed(D3DUSAGE_RENDERTARGET | extra, rtype),
+                "usage {extra:#x} on rtype {rtype}"
+            );
+        }
+    }
+    for rtype in [
+        D3DRTYPE_CUBETEXTURE,
+        D3DRTYPE_VOLUME,
+        D3DRTYPE_VOLUMETEXTURE,
+        D3DRTYPE_VERTEXBUFFER,
+        D3DRTYPE_INDEXBUFFER,
+    ] {
+        assert!(
+            !null_render_target_usage_allowed(D3DUSAGE_RENDERTARGET, rtype),
+            "rtype {rtype}"
+        );
+    }
+}

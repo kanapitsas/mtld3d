@@ -388,6 +388,13 @@ pub const D3DFMT_DF16: u32 = 0x3631_4644; // 'DF16'
 /// `MAKEFOURCC('R','E','S','Z')`: probed to detect the depth-resolve hack.
 pub const D3DFMT_RESZ: u32 = 0x5A53_4552;
 
+/// `MAKEFOURCC('N','U','L','L')`: a colour render target with no colour storage.
+///
+/// The vendor format every D3D9 driver offered for depth-only passes: bound
+/// as a render target it takes no colour write, so a pass that needs only
+/// its depth surface needs no colour target of the same size beside it.
+pub const D3DFMT_NULL: u32 = u32::from_le_bytes(*b"NULL");
+
 /// Capability token for alpha-to-coverage, also written to `D3DRS_ADAPTIVETESS_Y`.
 pub const D3DFMT_ATOC: u32 = u32::from_le_bytes(*b"ATOC");
 

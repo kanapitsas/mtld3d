@@ -69,6 +69,18 @@ divergences from D3D9 it keeps on purpose. The tested games are in
   GPU-only plain depth textures for RESZ destinations. Dynamic DEFAULT-pool
   D16, D24X8 and D24S8 textures support packed CPU locks, explicit mips and
   RESZ readback.
+- The `NULL` render-target format, the colour target with no colour storage
+  every D3D9 driver offered for depth-only passes: `CheckDeviceFormat`
+  offers it as a 2D render target (surface or texture, `D3DUSAGE_RENDERTARGET`
+  alone) and `CheckDepthStencilMatch` pairs it with any depth format;
+  `CreateRenderTarget` (single-sampled) and `CreateTexture(RENDERTARGET)`
+  create it, every other create refuses it. A slot that holds one takes no
+  colour write whatever `COLORWRITEENABLE` says, so a pass into it produces
+  only its depth. It is backed by an `R8Unorm` texture nobody reads (D3D9
+  charges it no memory, and neither does `GetAvailableTextureMem`), which a
+  pass carries until the no-colour pipeline twin of its draws is built, from
+  the next frame on, and drops then. `ColorFill` of one succeeds and changes
+  nothing; `StretchRect` from or to one is refused.
 - Fetch4 gathers on 2D L8, L16, A8, R16F, R32F and raw-depth textures.
 - Anisotropic filtering, LOD bias, sRGB read on the formats whose Metal
   counterpart has an sRGB twin and sRGB write into the render targets of
