@@ -16,10 +16,13 @@
 //!   share the window (a game creates its next device before it releases
 //!   the last, or probes with a second one), so the layer's address cannot
 //!   name a record: each device retires its own record and gives back its
-//!   own retain, whichever goes first. The newest device configured the
-//!   layer last and is the one its layer-keyed calls (`Reset`'s pacing, the
-//!   gamma ramp) find, as in the Wine build the newest device's view is the
-//!   one shown.
+//!   own retain, whichever goes first. The gamma ramp is the layer's, and
+//!   every record on it follows it. `Reset`'s pacing names the layer, not
+//!   the view, so it re-paces the newest device's record, the one that
+//!   configured the layer last, as in the Wine build the newest device's
+//!   view is the one shown: the `Reset` of an older device while a newer one
+//!   is live on its window changes the newer one's pacing, and its own keeps
+//!   the pacing it attached with.
 //! - The layer is configured on the attaching thread, the device's API
 //!   thread, inside an explicit transaction: device, pixel format, opacity,
 //!   `framebufferOnly`, pacing and drawable size, never anything of a view or

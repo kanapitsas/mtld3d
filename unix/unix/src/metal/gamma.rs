@@ -66,21 +66,25 @@ fn tables() -> MutexGuard<'static, FxHashMap<usize, Table>> {
 /// `entries` is `None` when the guest went back to an identity ramp or left
 /// fullscreen: the table is removed and the layer's presents go back to the
 /// route they would take with no ramp at all. Returns `false` for a layer no
-/// attachment record names, which is a device that never attached one.
+/// attachment record names, which is a device that never attached one. The
+/// table is the layer's, so every record on the layer follows it: one in the
+/// Wine build, every device on the window on a native host, whose devices
+/// share the host's layer.
 pub fn set_gamma_ramp(
     layer_handle: MetalHandle<CAMetalLayerKind>,
     entries: Option<&[u16]>,
 ) -> bool {
     let layer =
         usize::try_from(layer_handle.raw()).expect("a 64-bit host addresses every layer pointer");
-    let Some(att) = attachment::find_by_layer(layer) else {
+    let records = attachment::all_on_layer(layer);
+    if records.is_empty() {
         mtld3d_shared::log_once_warn!(
             target: LOG_TARGET,
             "present: SetGammaRamp for layer {layer:#x} with no attachment record; \
              the presented frame is unchanged",
         );
         return false;
-    };
+    }
     if let Some(entries) = entries {
         {
             let mut tables = tables();
@@ -94,10 +98,14 @@ pub fn set_gamma_ramp(
         }
         // Only once the entries are in place: the present path reads the flag
         // first and binds the table second.
-        att.set_gamma_active(true);
+        for att in &records {
+            att.set_gamma_active(true);
+        }
     } else {
         // The other order for the same reason.
-        att.set_gamma_active(false);
+        for att in &records {
+            att.set_gamma_active(false);
+        }
         tables().remove(&layer);
     }
     true

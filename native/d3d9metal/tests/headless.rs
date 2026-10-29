@@ -617,6 +617,31 @@ fn retain_count(layer: &CAMetalLayer) -> isize {
     objc2_core_foundation::CFGetRetainCount(Some(cf))
 }
 
+/// Wait for `layer`'s retain count to come down to `expected`, and assert it does.
+///
+/// A presented drawable keeps its layer retained until Core Animation lets
+/// it go, a little after the device that presented it is gone, so the count
+/// can stand above `expected` for a moment. It never goes below: that is the
+/// over-release this guards against.
+fn settle_retain_count(layer: &CAMetalLayer, expected: isize, what: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let count = retain_count(layer);
+        assert!(
+            count >= expected,
+            "{what}: the layer is over-released ({count} < {expected})"
+        );
+        if count == expected {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}: the layer keeps {count} retains, expected {expected}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// Two devices on one window share its layer, and either may go first.
 ///
 /// A game creates its next device before it releases the last, or probes
@@ -639,14 +664,15 @@ fn two_devices_share_a_layer_in_either_release_order() {
     for older_goes_first in [true, false] {
         // SAFETY: `d3d` is live.
         let older = unsafe { create_device(d3d, SHARED_HWND) };
-        let with_one = retain_count(&layer);
-        assert!(with_one > before, "a device holds the layer");
+        // Each attach keeps one retain on the host's layer, its own.
+        let with_one = before + 1;
+        settle_retain_count(&layer, with_one, "a device holds one retain on the layer");
         // SAFETY: as above.
         let newer = unsafe { create_device(d3d, SHARED_HWND) };
-        assert_eq!(
-            retain_count(&layer) - with_one,
-            with_one - before,
-            "the second device takes retains of its own"
+        settle_retain_count(
+            &layer,
+            with_one + 1,
+            "the second device takes a retain of its own",
         );
         // SAFETY: both devices are live and SIZE-square.
         let drawn = unsafe { clear_read_and_present(older, RED) };
@@ -667,10 +693,10 @@ fn two_devices_share_a_layer_in_either_release_order() {
         // SAFETY: the test's only reference on `first`.
         let left = unsafe { release(first) };
         assert_eq!(left, 0, "the first device's last reference");
-        assert_eq!(
-            retain_count(&layer),
+        settle_retain_count(
+            &layer,
             with_one,
-            "releasing one device gives back its retains alone"
+            "releasing one device gives back its retains alone",
         );
         let blue = 0xFF00_00FF;
         // SAFETY: the survivor is live and SIZE-square.
@@ -683,10 +709,10 @@ fn two_devices_share_a_layer_in_either_release_order() {
         // SAFETY: the test's only reference on the survivor.
         let left = unsafe { release(survivor) };
         assert_eq!(left, 0, "the survivor's last reference");
-        assert_eq!(
-            retain_count(&layer),
+        settle_retain_count(
+            &layer,
             before,
-            "with both devices gone the layer has the retains it had"
+            "with both devices gone the layer has the retains it had",
         );
     }
     // SAFETY: the test's reference on the interface, its last.

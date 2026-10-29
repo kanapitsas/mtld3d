@@ -708,6 +708,20 @@ pub fn find_by_layer(layer: usize) -> Option<Arc<Attachment>> {
         .cloned()
 }
 
+/// Every live record whose layer is `layer`.
+///
+/// One in the Wine build; every device on the window on a native host. For
+/// state that belongs to the layer rather than to a device (the gamma ramp),
+/// which every record on it has to follow. A linear scan, off the present path.
+#[must_use]
+pub fn all_on_layer(layer: usize) -> Vec<Arc<Attachment>> {
+    lock()
+        .values()
+        .filter(|att| att.layer == layer)
+        .cloned()
+        .collect()
+}
+
 /// What [`retain_newest_surface_on`] found on a window.
 #[cfg(not(feature = "native-host"))]
 #[derive(Debug, PartialEq, Eq)]

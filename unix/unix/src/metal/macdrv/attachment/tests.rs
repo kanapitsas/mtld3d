@@ -35,7 +35,7 @@ use mtld3d_shared::mtl::{ClientSurfaceRequest, ColorSpacePolicy};
 
 use super::{
     AttachFlags, AttachLatches, Attachment, HEADROOM_REFRESH_PRESENTS, NewestSurface,
-    UNDISPLAYED_PACED_LIMIT, find, find_by_layer, live, next_unshown_release,
+    UNDISPLAYED_PACED_LIMIT, all_on_layer, find, find_by_layer, live, next_unshown_release,
     publish_backing_scale, register, request_client_surface, request_cursor_kick_all,
     request_first_frame_present, retain_newest_surface_on, test_address_block,
     undisplayed_run_edge, unregister,
@@ -206,6 +206,11 @@ fn lookup_by_a_shared_layer_finds_the_newest_record() {
     let newer = register(newer_view, layer, &latches(AttachFlags::empty(), 1, None));
     assert!(is_same(&find_by_layer(layer).expect("newest"), &newer));
     assert!(is_same(&find(older_view).expect("older by view"), &older));
+    let on_layer = all_on_layer(layer);
+    assert_eq!(on_layer.len(), 2, "both records share the layer");
+    assert!(on_layer.iter().any(|att| is_same(att, &older)));
+    assert!(on_layer.iter().any(|att| is_same(att, &newer)));
+    assert!(all_on_layer(layer + 8).is_empty(), "an unattached layer has none");
 
     unregister(newer_view);
     assert!(is_same(
