@@ -1,5 +1,17 @@
 # mtld3d
 
+> **This is a modified fork of [athei/mtld3d](https://github.com/athei/mtld3d).**
+> The [`feat/native-host` branch](https://github.com/kanapitsas/mtld3d/tree/feat/native-host)
+> adds `libd3d9metal`, a native host build of mtld3d's Direct3D 9 implementation
+> for macOS and iOS without Wine, with a small
+> [C host interface](native/include/d3d9metal.h). It is used by
+> [portal2-recomp](https://github.com/kanapitsas/portal2-recomp) and discussed
+> upstream in [athei/mtld3d#1193](https://github.com/athei/mtld3d/issues/1193).
+> Build it with `make native` for macOS or `make native-ios` for iOS; see the
+> [native host build instructions](docs/BUILDING.md#native-host-build).
+> Please report fork-specific issues to this fork. Thanks to the original
+> mtld3d author and contributors.
+
 Direct3D 9 for Wine on macOS, backed by Metal.
 
 mtld3d replaces Wine's `d3d9.dll`. The PE side implements the
