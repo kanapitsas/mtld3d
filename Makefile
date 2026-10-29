@@ -47,7 +47,10 @@ OLD_WINE_VARIABLES := $(strip $(foreach v,WINE_X86_64 WINE_ARM64 WINE_SDK_ARM64X
 ifneq ($(OLD_WINE_VARIABLES),)
 $(error these variables are no longer read: $(OLD_WINE_VARIABLES). WINE_SDK names the one Wine every build, install and leg uses, an arm64 or an x86_64 Wine, and the ARM64X build is built whenever it is the arm64 one; unset them and set WINE_SDK)
 endif
-ifeq ($(strip $(WINE_SDK)),)
+# The native host build's goals use no Wine, so a run of only those needs none.
+NATIVE_GOALS := native native-ios check-native test-native
+ifeq ($(strip $(WINE_SDK))$(if $(MAKECMDGOALS),$(filter-out $(NATIVE_GOALS),$(MAKECMDGOALS)),all),)
+else ifeq ($(strip $(WINE_SDK)),)
 $(error WINE_SDK is not set; it names the Wine tree (holding bin/wine and lib/wine), an arm64 or an x86_64 Wine, that every build, install and leg uses)
 endif
 
@@ -590,6 +593,7 @@ TAG          ?= $(shell git describe --tags --exact-match 2>/dev/null)
 # Every target here is phony: the recipes write into cargo's target dirs and the
 # Wine install, never into a file named after the target.
 .PHONY: all windows windows-i686 windows-x86_64 windows-arm64x unix unix-x64 unix-arm64 \
+	native native-ios check-native test-native \
 	install install-windows-i686 install-windows-x86_64 install-windows-arm64x \
 	install-unix-x64 install-unix-arm64 \
 	bundle version-check production-assert-gate mem-routine-gate stage clean-isolated clean-isolated-orphans \
@@ -2387,6 +2391,30 @@ clippy-perf:
 
 test-unit-perf:
 	MTLD3D_PERF=1 CARGO_TARGET_DIR=target/perf $(MAKE) PERF= test-unit
+
+# The native host build (`native/`, docs/ARCHITECTURE.md "The native host
+# linkage"): `libd3d9metal.dylib` and `.a`, the API side and the native runtime
+# in one library with no Wine, for macOS and for iOS. Neither needs WINE_SDK or
+# xwin. `check-native` lints what only that build compiles (the `native-host`
+# feature and d3d9 built for an Apple target) and `test-native` runs its
+# headless end-to-end test, which needs a Metal device and opens no window.
+# None of them is part of `make check` or `make test` yet.
+native:
+	cd native && cargo +$(RUST_STABLE) build --profile $(PROFILE)
+
+native-ios:
+	cd native && cargo +$(RUST_STABLE) build --profile $(PROFILE) --target aarch64-apple-ios
+
+check-native:
+	cd native && cargo +$(RUST_STABLE) clippy --all-targets $(DENY_WARNINGS)
+	cd windows && cargo +$(RUST_STABLE) clippy -p d3d9 --target $(UNIX_NATIVE_TARGET) $(DENY_WARNINGS)
+	cd windows && cargo +$(RUST_STABLE) clippy -p d3d9 --target aarch64-apple-ios $(DENY_WARNINGS)
+	cd unix && cargo +$(RUST_STABLE) clippy -p mtld3d-unix --features native-host $(DENY_WARNINGS)
+	cd unix && cargo +$(RUST_STABLE) clippy -p mtld3d-unix --features native-host --target aarch64-apple-ios $(DENY_WARNINGS)
+	cd native && cargo +$(RUST_NIGHTLY) fmt --check
+
+test-native:
+	cd native && cargo +$(RUST_STABLE) test
 
 # The conventions clippy can't express: doc-comment shape, the Clone/Copy derive
 # inventory, and the handful of patterns that are banned or confined to a known

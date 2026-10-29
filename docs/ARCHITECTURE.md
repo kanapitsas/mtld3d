@@ -85,10 +85,78 @@ Two Cargo workspaces, one per target platform: `windows/` builds the PE side for
 | `mtld3d-unix`       | `unix/`    | `mtld3d.so`                                            |
 | `mtld3d-shared`     | `unix/`    | rlib shared by `d3d9.dll`, `mtld3d.dll` and `mtld3d.so` |
 | `mtld3d-conformance`| `unix/`    | the conformance runner                                 |
+| `d3d9metal`         | `native/`  | `libd3d9metal.dylib` and `.a`, the native host build   |
 
 `mtld3d-core` holds every platform-independent helper (DXSO to MSL emission, the render-pass state machine, the slab allocator, format / FVF / vertex-decl / dirty-rect math, fixed-function state) and compiles for the macOS host as well as PE, so `cargo test -p mtld3d-core --target aarch64-apple-darwin` runs its unit tests natively instead of through Wine.
 
 `mtld3d-shared` is the crate every linkage unit depends on, primarily for the PE/Unix wire format: the fixed frame records (`command_header`, `encoder_wire`, `encoder_protocol`), the `Thunks` enum, param structs and typed `mtl::` wire values. It also defines the `Command` struct the native encoder builds for the submit thread, which does not cross the boundary. Pure data and pure-Rust helpers only, no FFI and no `#[link]`, so both workspaces can depend on it cleanly. The internal crates are path dependencies and are not published to crates.io.
+
+## The native host linkage
+
+A third linkage serves an application that is not a Windows program under
+Wine: a native port that links `d3d9.h` directly, or a recompiler that runs a
+game's code natively and bridges its COM calls. `native/` is a third
+workspace whose one crate, `d3d9metal`, links `d3d9` and `mtld3d-unix` as
+libraries into `libd3d9metal.dylib` and `libd3d9metal.a`, for
+`aarch64-apple-darwin` and `aarch64-apple-ios`:
+
+```
+app → libd3d9metal (d3d9 + mtld3d-core + mtld3d-unix, one Mach-O image)
+```
+
+The boundary is the one this document describes, with the transport changed.
+`d3d9` still records frames into the wire command stream and calls
+`unix_call` with the same `Thunks` codes and parameter records; the symbol
+it calls, `mtld3d_unix_call`, is `d3d9metal`'s, which runs the runtime's
+dispatch table (`mtld3d_unix::native_unix_call`, the table Wine's dispatcher
+indexes) on the calling thread. Wire pointers are plain host pointers, as
+they already are for the 64-bit PE builds. It is a separate workspace so that
+the `native-host` feature it turns on never reaches the Wine builds through
+Cargo's feature unification.
+
+What Wine provides to the other builds, the host provides through one table
+of callbacks, `D3D9MetalHost` in `native/include/d3d9metal.h`, installed once
+by `d3d9metal_init` (`mtld3d_core::native_host` holds it, a process-wide
+static: one process has one host application):
+
+- `metal_layer` answers the `CAMetalLayer` behind a window handle, which is
+  the host's opaque pointer, and the size its back buffer defaults to. The
+  runtime's `metal/host_layer.rs` takes the place of `macdrv`: it configures
+  the layer on the attaching thread inside a transaction of its own, keys the
+  attachment record by the layer's address and leaves the window, its screen
+  and the cursor to the host. No `AppKit` object is touched, nothing hops to
+  the main thread, and the presenter resizes the drawable to the layer's
+  bounds as in the Wine build.
+- `alloc_app` and `free_app` back every `PageBox` a `Lock` can hand out, since
+  a host that runs the application in an address window of its own can reach
+  nothing else. The runtime's own pages, and the upload snapshots, take the
+  `PageBox::new_private_*` constructors and stay out of that memory, and the
+  recycle pool, which serves `Lock`, parks only host pages.
+- `blocking_begin` and `blocking_end` bracket every thunk but the logger's,
+  which is where the API side waits (backpressure and the frame-latency bound
+  at `Present`, read-backs, `Reset`, teardown). Native threads keep reading
+  and writing application memory meanwhile (uploads, query results), so the
+  host's application memory has to stay mapped across the bracket.
+- The PCI ids, the shader cache directory and the display modes.
+
+On the API side, `windows/d3d9/src/host.rs` stands in for `dll.rs` (no
+`DllMain`, no loader pin, one logger shared with the runtime) and for the
+Windows-only modules: `crash` reports no address-space walk, `log_sink` names
+`log.dir` or stderr, `wine_path` maps nothing. The modules that call user32,
+gdi32 and kernel32 keep their call sites and import the same names from
+`host/win32.rs`, which answers them for a window the host owns: its client
+rect is the layer's size, no window procedure is installed and no message is
+posted, no cursor or GDI object is created, a display mode change is accepted
+without effect and the modes are the host's list. A host resizes by calling
+`Reset`. `mtld3d-core` is one copy for both runtimes there, so its frame
+recorder keys on the `pe_recording` cfg (every PE target, and the
+`native-host` feature) rather than on `cfg(windows)`.
+
+Not in the native build: the signal handler (a host's signals are its own),
+the software cursor overlay, the Wine client surfaces, HDR output and the
+display-follow of an attachment (the layer stays SDR at headroom 1 with a
+backing scale of 1). On iOS the runtime keeps the system allocator, since
+snmalloc's Apple layer needs `mach_vm`.
 
 ## CRT calls from an x64 guest on an arm64 Wine
 

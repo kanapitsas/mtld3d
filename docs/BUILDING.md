@@ -109,6 +109,29 @@ debugging heap corruption; the Makefile says what each one does, and
 [`ARCHITECTURE.md`](ARCHITECTURE.md#debugging-heap-corruption--mtld3d_crumb1-mmap-breadcrumb)
 describes the breadcrumb ring.
 
+## Native host build
+
+`make native` builds `libd3d9metal.dylib` and `libd3d9metal.a` under
+`native/target/<profile>/`, and `make native-ios` the same for
+`aarch64-apple-ios` under `native/target/aarch64-apple-ios/<profile>/`
+(`rustup target add aarch64-apple-ios` first). Neither needs `WINE_SDK`,
+xwin or a Wine tree. The header is `native/include/d3d9metal.h`; a host links
+the library, installs its callbacks with `d3d9metal_init` and calls
+`d3d9metal_Direct3DCreate9` (or `Direct3DCreate9`, also exported).
+[`ARCHITECTURE.md`](ARCHITECTURE.md#the-native-host-linkage) describes the
+linkage and what the host provides.
+
+`make check-native` lints what only this build compiles (the `native-host`
+feature of `mtld3d-unix` and `mtld3d-core`, and `d3d9` built for macOS and
+iOS) and checks the workspace's formatting; `make test-native` runs its
+end-to-end test, which drives a device against a `CAMetalLayer` in no window
+and reads the frame back, so it needs a Metal device and nothing else. Neither
+is part of `make check` or `make test` yet. The workspace has its own
+`Cargo.lock`, which `make upgrade` does not move with the other two, and pins
+the iOS deployment target its C dependencies are compiled for
+(`native/.cargo/config.toml`). Cargo also links the `d3d9` and `mtld3d-unix`
+cdylibs of the dependency graph, which go unused there.
+
 ## Instruction-set baselines
 
 The x86 PE DLLs are guest code, which an x86 translator runs: Rosetta under

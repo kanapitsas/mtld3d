@@ -29,7 +29,13 @@
  * Calls that wait (Present under backpressure or a frame-latency bound, a
  * read-back such as GetRenderTargetData or a Lock of a GPU-written resource,
  * Reset, the device's last Release, query polls with D3DGETDATA_FLUSH) wait
- * between blocking_begin and blocking_end on the calling thread.
+ * between blocking_begin and blocking_end on the calling thread; the pair
+ * brackets every crossing into the Metal runtime, so it is also called around
+ * calls that do not wait, and does not nest. The layer's own threads read and
+ * write alloc_app memory at any time (uploads of unlocked data, read-back
+ * results), so that memory stays mapped, at the same address, until free_app.
+ * The CAMetalLayer's drawableSize is set by the layer, to the layer's bounds
+ * times its contentsScale; a back buffer of another size is resampled into it.
  */
 #ifndef D3D9METAL_H
 #define D3D9METAL_H
@@ -76,9 +82,10 @@ typedef struct D3D9MetalHost {
     /* Directory for the shader cache; NULL for the executable's directory. */
     const char *cache_dir;
     /*
-     * Since 0.15.1, both may be absent (size): the display modes the adapter
-     * enumerates, the first being the current one. NULL or 0 for 1920x1080 at
-     * 60 Hz alone. Kept valid by the host for the life of the process.
+     * Optional, absent from a struct whose size stops before them: the
+     * display modes the adapter enumerates, the first being the current one.
+     * NULL or 0 for 1920x1080 at 60 Hz alone. Kept valid by the host for the
+     * life of the process.
      */
     const D3D9MetalDisplayMode *modes;
     uint32_t mode_count;
