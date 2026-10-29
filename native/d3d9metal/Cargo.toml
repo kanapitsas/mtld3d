@@ -1,0 +1,30 @@
+[package]
+name = "d3d9metal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description.workspace = true
+authors.workspace = true
+
+# `cdylib` is `libd3d9metal.dylib`, `staticlib` is `libd3d9metal.a`; the
+# `rlib` is what the end-to-end test in `tests/` links.
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+d3d9 = { workspace = true }
+mtld3d-core = { workspace = true }
+mtld3d-shared = { workspace = true }
+mtld3d-unix = { workspace = true }
+
+[dev-dependencies]
+mtld3d-types = { workspace = true }
+objc2 = { workspace = true }
+objc2-core-foundation = { workspace = true }
+objc2-foundation = { workspace = true }
+objc2-metal = { workspace = true }
+objc2-quartz-core = { workspace = true }
+
+[lints]
+workspace = true
