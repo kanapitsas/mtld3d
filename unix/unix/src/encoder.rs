@@ -2566,8 +2566,7 @@ impl FrameEncoder {
         MemoryGauges {
             process_footprint: crate::handlers::process_footprint(),
             metal_allocated: u64::try_from(self.device.currentAllocatedSize()).unwrap_or(u64::MAX),
-            unix_heap: u64::try_from(snmalloc_rs::SnMalloc::memory_stats().current_memory_usage)
-                .unwrap_or(u64::MAX),
+            unix_heap: heap_in_use(),
             malloc_in_use: crate::handlers::malloc_in_use(),
             staging_wrapped: staging_wrapped_bytes(&self.texture_cache),
         }
@@ -10613,4 +10612,16 @@ fn open_or_create_cache_file(
         return Err(std::io::Error::other("shader_cache_path unavailable"));
     };
     shader_cache::CacheWriter::open(path)
+}
+
+/// Bytes the global allocator holds committed: snmalloc's two atomic loads.
+#[cfg(not(target_os = "ios"))]
+fn heap_in_use() -> u64 {
+    u64::try_from(snmalloc_rs::SnMalloc::memory_stats().current_memory_usage).unwrap_or(u64::MAX)
+}
+
+/// Bytes the global allocator holds: on iOS the system `malloc`, whose zones say.
+#[cfg(target_os = "ios")]
+fn heap_in_use() -> u64 {
+    crate::handlers::malloc_in_use()
 }

@@ -479,7 +479,9 @@ pub fn task_faults() -> mtld3d_core::perf::TaskFaults {
 /// `ri_phys_footprint` of `proc_pid_rusage`, the task ledger figure that
 /// `TASK_VM_INFO`'s `phys_footprint` also reports and the Metal HUD shows
 /// as app memory: resident and compressed private memory plus the driver and
-/// GPU allocations charged to the process.
+/// GPU allocations charged to the process. iOS has no `proc_pid_rusage`, so
+/// the native host build for iOS reports 0.
+#[cfg(not(target_os = "ios"))]
 pub fn process_footprint() -> u64 {
     // SAFETY: rusage_info_v2 is plain data initialized before the kernel fills it.
     let mut info: libc::rusage_info_v2 = unsafe { core::mem::zeroed() };
@@ -495,6 +497,12 @@ pub fn process_footprint() -> u64 {
         )
     };
     if rc == 0 { info.ri_phys_footprint } else { 0 }
+}
+
+/// The process's physical footprint: not queryable on iOS, so 0.
+#[cfg(target_os = "ios")]
+pub const fn process_footprint() -> u64 {
+    0
 }
 
 /// Bytes in use in every `malloc` zone of the process.

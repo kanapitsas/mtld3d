@@ -19,9 +19,12 @@ mtld3d-shared = { workspace = true }
 mtld3d-types = { workspace = true }
 log = { workspace = true }
 rustc-hash = { workspace = true }
-snmalloc-rs = { workspace = true }
 xbr = { workspace = true }
 xxhash-rust = { workspace = true }
+
+# snmalloc's Apple layer needs `mach_vm`, which iOS does not offer.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+snmalloc-rs = { workspace = true }
 
 # A native host build (any target but Windows) records frames as the PE side
 # does and adopts guest leases as the native side does, in one copy of the core.

@@ -592,8 +592,15 @@ fn log_breakdown(space: &str, figures: &DeviceFigures) {
 /// allocators, two atomic loads: every heap block of this image, the page
 /// boxes, and what the per-thread caches keep for reuse. It is not the
 /// image's share of the address space, which reserves ahead of commit.
+#[cfg(not(target_os = "ios"))]
 fn heap_committed_bytes() -> u64 {
     snmalloc_rs::SnMalloc::memory_stats().current_memory_usage as u64
+}
+
+/// The native host build for iOS has no snmalloc to ask; its heap is the system's.
+#[cfg(target_os = "ios")]
+const fn heap_committed_bytes() -> u64 {
+    0
 }
 
 /// Step `latch` over `thresholds` with this sample's `value_mib`, once per process.

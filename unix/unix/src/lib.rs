@@ -49,6 +49,10 @@ const DISPATCH_TABLE: [UnixCallFn; Thunks::COUNT] = build_dispatch_table();
 /// Objective-C or C allocate is still freed by them, and no buffer this crate
 /// hands to Metal is freed by Metal (`bytesNoCopy` wrappers carry no
 /// deallocator).
+///
+/// iOS has no snmalloc (its Apple layer needs `mach_vm`), so the native host
+/// build for iOS keeps the system allocator.
+#[cfg(not(target_os = "ios"))]
 #[global_allocator]
 static ALLOCATOR: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 

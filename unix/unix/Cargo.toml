@@ -35,12 +35,16 @@ objc2-metal = { workspace = true }
 objc2-metal-fx = { workspace = true }
 objc2-quartz-core = { workspace = true }
 rustc-hash = { workspace = true }
-snmalloc-rs = { workspace = true }
 strum = { workspace = true }
 
 # AppKit exists on macOS only; the native host build for iOS goes without it.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { workspace = true }
+
+# snmalloc's Apple layer maps through `mach_vm`, which iOS does not offer; the
+# native host build for iOS allocates through the system allocator.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+snmalloc-rs = { workspace = true }
 
 [build-dependencies]
 cc = { workspace = true }

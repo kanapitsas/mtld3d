@@ -1,0 +1,6 @@
+[env]
+# One iOS deployment target for rustc and for the C the build scripts compile
+# (zstd, snmalloc on macOS), which otherwise default to the SDK's own and
+# reference runtime symbols an older target does not have. Metal 3 and the
+# `CAMetalLayer` properties the native host build sets need iOS 16.
+IPHONEOS_DEPLOYMENT_TARGET = "16.0"
