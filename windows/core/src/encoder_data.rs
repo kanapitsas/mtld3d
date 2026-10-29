@@ -813,152 +813,152 @@ pub enum Op {
     /// Issue a draw using the current snapshot.
     Draw(DrawOp),
     SetViewport(
-        #[cfg(windows)] SetViewportOp,
-        #[cfg(not(windows))] Box<SetViewportOp>,
+        #[cfg(pe_recording)] SetViewportOp,
+        #[cfg(not(pe_recording))] Box<SetViewportOp>,
     ),
     SetVertexSampler(
-        #[cfg(windows)] SetVertexSamplerOp,
-        #[cfg(not(windows))] Box<SetVertexSamplerOp>,
+        #[cfg(pe_recording)] SetVertexSamplerOp,
+        #[cfg(not(pe_recording))] Box<SetVertexSamplerOp>,
     ),
     SetVertexTexture(
-        #[cfg(windows)] SetVertexTextureOp,
-        #[cfg(not(windows))] Box<SetVertexTextureOp>,
+        #[cfg(pe_recording)] SetVertexTextureOp,
+        #[cfg(not(pe_recording))] Box<SetVertexTextureOp>,
     ),
     BindDepth(
-        #[cfg(windows)] BindDepthOp,
-        #[cfg(not(windows))] Box<BindDepthOp>,
+        #[cfg(pe_recording)] BindDepthOp,
+        #[cfg(not(pe_recording))] Box<BindDepthOp>,
     ),
     BindColor(
-        #[cfg(windows)] BindColorOp,
-        #[cfg(not(windows))] Box<BindColorOp>,
+        #[cfg(pe_recording)] BindColorOp,
+        #[cfg(not(pe_recording))] Box<BindColorOp>,
     ),
     GenerateMipmapsOrdered(
-        #[cfg(windows)] GenerateMipmapsOrderedOp,
-        #[cfg(not(windows))] Box<GenerateMipmapsOrderedOp>,
+        #[cfg(pe_recording)] GenerateMipmapsOrderedOp,
+        #[cfg(not(pe_recording))] Box<GenerateMipmapsOrderedOp>,
     ),
     UnbindExtraColor(
-        #[cfg(windows)] UnbindExtraColorOp,
-        #[cfg(not(windows))] Box<UnbindExtraColorOp>,
+        #[cfg(pe_recording)] UnbindExtraColorOp,
+        #[cfg(not(pe_recording))] Box<UnbindExtraColorOp>,
     ),
     DestroyTexture(
-        #[cfg(windows)] DestroyTextureOp,
-        #[cfg(not(windows))] Box<DestroyTextureOp>,
+        #[cfg(pe_recording)] DestroyTextureOp,
+        #[cfg(not(pe_recording))] Box<DestroyTextureOp>,
     ),
     DestroyBuffer(
-        #[cfg(windows)] DestroyBufferOp,
-        #[cfg(not(windows))] Box<DestroyBufferOp>,
+        #[cfg(pe_recording)] DestroyBufferOp,
+        #[cfg(not(pe_recording))] Box<DestroyBufferOp>,
     ),
     ReadColorHandle(
-        #[cfg(windows)] ReadColorHandleOp,
-        #[cfg(not(windows))] Box<ReadColorHandleOp>,
+        #[cfg(pe_recording)] ReadColorHandleOp,
+        #[cfg(not(pe_recording))] Box<ReadColorHandleOp>,
     ),
     NoteColorRead(
-        #[cfg(windows)] NoteColorReadOp,
-        #[cfg(not(windows))] Box<NoteColorReadOp>,
+        #[cfg(pe_recording)] NoteColorReadOp,
+        #[cfg(not(pe_recording))] Box<NoteColorReadOp>,
     ),
     ResolveDepthSurface(
-        #[cfg(windows)] ResolveDepthSurfaceOp,
-        #[cfg(not(windows))] Box<ResolveDepthSurfaceOp>,
+        #[cfg(pe_recording)] ResolveDepthSurfaceOp,
+        #[cfg(not(pe_recording))] Box<ResolveDepthSurfaceOp>,
     ),
     StretchBlit(
-        #[cfg(windows)] StretchBlitOp,
-        #[cfg(not(windows))] Box<StretchBlitOp>,
+        #[cfg(pe_recording)] StretchBlitOp,
+        #[cfg(not(pe_recording))] Box<StretchBlitOp>,
     ),
     ColorFill(
-        #[cfg(windows)] ColorFillOp,
-        #[cfg(not(windows))] Box<ColorFillOp>,
+        #[cfg(pe_recording)] ColorFillOp,
+        #[cfg(not(pe_recording))] Box<ColorFillOp>,
     ),
     CarryDepth(
-        #[cfg(windows)] CarryDepthOp,
-        #[cfg(not(windows))] Box<CarryDepthOp>,
+        #[cfg(pe_recording)] CarryDepthOp,
+        #[cfg(not(pe_recording))] Box<CarryDepthOp>,
     ),
     ClearColor(
-        #[cfg(windows)] ClearColorOp,
-        #[cfg(not(windows))] Box<ClearColorOp>,
+        #[cfg(pe_recording)] ClearColorOp,
+        #[cfg(not(pe_recording))] Box<ClearColorOp>,
     ),
     ClearColorRects(
-        #[cfg(windows)] ClearColorRectsOp,
-        #[cfg(not(windows))] Box<ClearColorRectsOp>,
+        #[cfg(pe_recording)] ClearColorRectsOp,
+        #[cfg(not(pe_recording))] Box<ClearColorRectsOp>,
     ),
     ClearDepthStencilRects(
-        #[cfg(windows)] ClearDepthStencilRectsOp,
-        #[cfg(not(windows))] Box<ClearDepthStencilRectsOp>,
+        #[cfg(pe_recording)] ClearDepthStencilRectsOp,
+        #[cfg(not(pe_recording))] Box<ClearDepthStencilRectsOp>,
     ),
     ClearDepthStencil(
-        #[cfg(windows)] ClearDepthStencilOp,
-        #[cfg(not(windows))] Box<ClearDepthStencilOp>,
+        #[cfg(pe_recording)] ClearDepthStencilOp,
+        #[cfg(not(pe_recording))] Box<ClearDepthStencilOp>,
     ),
     ResolveDynamicDepth(
-        #[cfg(windows)] ResolveDynamicDepthOp,
-        #[cfg(not(windows))] Box<ResolveDynamicDepthOp>,
+        #[cfg(pe_recording)] ResolveDynamicDepthOp,
+        #[cfg(not(pe_recording))] Box<ResolveDynamicDepthOp>,
     ),
     ResolveDepthTexture(
-        #[cfg(windows)] ResolveDepthTextureOp,
-        #[cfg(not(windows))] Box<ResolveDepthTextureOp>,
+        #[cfg(pe_recording)] ResolveDepthTextureOp,
+        #[cfg(not(pe_recording))] Box<ResolveDepthTextureOp>,
     ),
     ReadDeviceBuffer(
-        #[cfg(windows)] ReadDeviceBufferOp,
-        #[cfg(not(windows))] Box<ReadDeviceBufferOp>,
+        #[cfg(pe_recording)] ReadDeviceBufferOp,
+        #[cfg(not(pe_recording))] Box<ReadDeviceBufferOp>,
     ),
     RegisterProgram(
-        #[cfg(windows)] RegisterProgramOp,
-        #[cfg(not(windows))] Box<RegisterProgramOp>,
+        #[cfg(pe_recording)] RegisterProgramOp,
+        #[cfg(not(pe_recording))] Box<RegisterProgramOp>,
     ),
     AdoptProgram(
-        #[cfg(windows)] AdoptProgramOp,
-        #[cfg(not(windows))] Box<AdoptProgramOp>,
+        #[cfg(pe_recording)] AdoptProgramOp,
+        #[cfg(not(pe_recording))] Box<AdoptProgramOp>,
     ),
     BeginVisibility(
-        #[cfg(windows)] BeginVisibilityOp,
-        #[cfg(not(windows))] Box<BeginVisibilityOp>,
+        #[cfg(pe_recording)] BeginVisibilityOp,
+        #[cfg(not(pe_recording))] Box<BeginVisibilityOp>,
     ),
     EndVisibility(
-        #[cfg(windows)] EndVisibilityOp,
-        #[cfg(not(windows))] Box<EndVisibilityOp>,
+        #[cfg(pe_recording)] EndVisibilityOp,
+        #[cfg(not(pe_recording))] Box<EndVisibilityOp>,
     ),
     RetireColor(
-        #[cfg(windows)] RetireColorOp,
-        #[cfg(not(windows))] Box<RetireColorOp>,
+        #[cfg(pe_recording)] RetireColorOp,
+        #[cfg(not(pe_recording))] Box<RetireColorOp>,
     ),
     RetireDepth(
-        #[cfg(windows)] RetireDepthOp,
-        #[cfg(not(windows))] Box<RetireDepthOp>,
+        #[cfg(pe_recording)] RetireDepthOp,
+        #[cfg(not(pe_recording))] Box<RetireDepthOp>,
     ),
     UploadColor(
-        #[cfg(windows)] UploadColorOp,
-        #[cfg(not(windows))] Box<UploadColorOp>,
+        #[cfg(pe_recording)] UploadColorOp,
+        #[cfg(not(pe_recording))] Box<UploadColorOp>,
     ),
     UploadResampled(
-        #[cfg(windows)] UploadResampledOp,
-        #[cfg(not(windows))] Box<UploadResampledOp>,
+        #[cfg(pe_recording)] UploadResampledOp,
+        #[cfg(not(pe_recording))] Box<UploadResampledOp>,
     ),
     UpdateColorRegion(
-        #[cfg(windows)] UpdateColorRegionOp,
-        #[cfg(not(windows))] Box<UpdateColorRegionOp>,
+        #[cfg(pe_recording)] UpdateColorRegionOp,
+        #[cfg(not(pe_recording))] Box<UpdateColorRegionOp>,
     ),
     ReadTextureHandle(
-        #[cfg(windows)] ReadTextureHandleOp,
-        #[cfg(not(windows))] Box<ReadTextureHandleOp>,
+        #[cfg(pe_recording)] ReadTextureHandleOp,
+        #[cfg(not(pe_recording))] Box<ReadTextureHandleOp>,
     ),
     GenerateMipmaps(
-        #[cfg(windows)] GenerateMipmapsOp,
-        #[cfg(not(windows))] Box<GenerateMipmapsOp>,
+        #[cfg(pe_recording)] GenerateMipmapsOp,
+        #[cfg(not(pe_recording))] Box<GenerateMipmapsOp>,
     ),
     ReadTextureColorHandle(
-        #[cfg(windows)] ReadTextureColorHandleOp,
-        #[cfg(not(windows))] Box<ReadTextureColorHandleOp>,
+        #[cfg(pe_recording)] ReadTextureColorHandleOp,
+        #[cfg(not(pe_recording))] Box<ReadTextureColorHandleOp>,
     ),
     UploadTextureAndMips(
-        #[cfg(windows)] UploadTextureAndMipsOp,
-        #[cfg(not(windows))] Box<UploadTextureAndMipsOp>,
+        #[cfg(pe_recording)] UploadTextureAndMipsOp,
+        #[cfg(not(pe_recording))] Box<UploadTextureAndMipsOp>,
     ),
     UploadTexture(
-        #[cfg(windows)] UploadTextureOp,
-        #[cfg(not(windows))] Box<UploadTextureOp>,
+        #[cfg(pe_recording)] UploadTextureOp,
+        #[cfg(not(pe_recording))] Box<UploadTextureOp>,
     ),
     SetDumpDraw(
-        #[cfg(windows)] SetDumpDrawOp,
-        #[cfg(not(windows))] Box<SetDumpDrawOp>,
+        #[cfg(pe_recording)] SetDumpDrawOp,
+        #[cfg(not(pe_recording))] Box<SetDumpDrawOp>,
     ),
     /// Inline op-stream-ordered `Staged` VB/IB upload.
     ///
@@ -1280,7 +1280,7 @@ impl FrameData {
     /// Called from `stamp_and_swap` with the previous frame's
     /// `ops_len()` so the new frame fills without any realloc in the
     /// common case where frame-to-frame op count is stable.
-    #[cfg(not(windows))]
+    #[cfg(not(pe_recording))]
     pub fn reserve_ops(&mut self, count: usize) {
         self.ops.reserve(count);
     }
@@ -1404,13 +1404,13 @@ impl FrameData {
     /// # Errors
     /// Returns allocation, size or malformed capture errors on the PE recording path.
     pub fn try_push_op(&mut self, op: Op) -> Result<(), mtld3d_shared::encoder_wire::WireError> {
-        #[cfg(windows)]
+        #[cfg(pe_recording)]
         {
             self.recorder
                 .get_or_insert_with(crate::encoder_packet::FrameRecorder::new)
                 .try_record(&mut self.scratch, op)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(pe_recording))]
         {
             self.account_op_vec_realloc();
             self.ops.push(op);
@@ -1419,7 +1419,7 @@ impl FrameData {
     }
 
     /// Write a borrowed draw directly into the PE frame capture.
-    #[cfg(windows)]
+    #[cfg(pe_recording)]
     pub fn record_draw(&mut self, draw: &crate::draw_data::DrawOp) {
         let _ = self
             .recorder
@@ -1437,7 +1437,7 @@ impl FrameData {
     ///
     /// # Errors
     /// Returns the latched frame error or a wire capture failure.
-    #[cfg(windows)]
+    #[cfg(pe_recording)]
     #[inline]
     pub fn record_single_stream_draw<D: crate::encoder_draw::draw_record::SingleStreamDraw>(
         &mut self,
@@ -1453,7 +1453,7 @@ impl FrameData {
     }
 
     /// Write a bound draw through the checked recorder path.
-    #[cfg(windows)]
+    #[cfg(pe_recording)]
     #[inline(never)]
     fn record_bound_draw(
         &mut self,
@@ -1467,7 +1467,7 @@ impl FrameData {
     }
 
     /// Retain an owned draw for native replay.
-    #[cfg(not(windows))]
+    #[cfg(not(pe_recording))]
     pub fn record_draw(&mut self, draw: crate::draw_data::DrawOp) {
         self.push_op(Op::Draw(draw));
     }
@@ -1479,14 +1479,14 @@ impl FrameData {
         rows: u16,
         data: crate::draw_data::ScratchSlice,
     ) {
-        #[cfg(windows)]
+        #[cfg(pe_recording)]
         {
             let _ = self
                 .recorder
                 .get_or_insert_with(crate::encoder_packet::FrameRecorder::new)
                 .record_vs_constants(&mut self.scratch, start_row, rows, data);
         }
-        #[cfg(not(windows))]
+        #[cfg(not(pe_recording))]
         self.push_op(Op::SetVsConstRange {
             start_row,
             rows,
@@ -1501,14 +1501,14 @@ impl FrameData {
         rows: u16,
         data: crate::draw_data::ScratchSlice,
     ) {
-        #[cfg(windows)]
+        #[cfg(pe_recording)]
         {
             let _ = self
                 .recorder
                 .get_or_insert_with(crate::encoder_packet::FrameRecorder::new)
                 .record_ps_constants(&mut self.scratch, start_row, rows, data);
         }
-        #[cfg(not(windows))]
+        #[cfg(not(pe_recording))]
         self.push_op(Op::SetPsConstRange {
             start_row,
             rows,
@@ -1523,14 +1523,14 @@ impl FrameData {
         rows: u16,
         data: crate::draw_data::ScratchSlice,
     ) {
-        #[cfg(windows)]
+        #[cfg(pe_recording)]
         {
             let _ = self
                 .recorder
                 .get_or_insert_with(crate::encoder_packet::FrameRecorder::new)
                 .record_ff_vs_constants(&mut self.scratch, start_row, rows, data);
         }
-        #[cfg(not(windows))]
+        #[cfg(not(pe_recording))]
         self.push_op(Op::SetFfVsConstRange {
             start_row,
             rows,
@@ -1593,7 +1593,7 @@ impl FrameData {
     /// double-and-memcpy. Hot-path: a single `len == capacity`
     /// compare when no realloc fires. Mirrors the `emit_command`
     /// pattern in `PassState`.
-    #[cfg(not(windows))]
+    #[cfg(not(pe_recording))]
     #[inline]
     const fn account_op_vec_realloc(&mut self) {
         if self.ops.len() == self.ops.capacity() {
@@ -1676,14 +1676,14 @@ impl FrameData {
 ///
 /// Keep the owned operation payload inline for PE recording. Native replay borrows
 /// fixed command records directly rather than reconstructing owned operations.
-#[cfg(windows)]
+#[cfg(pe_recording)]
 #[must_use]
 pub const fn capture_op<T>(value: T) -> T {
     value
 }
 
 /// Box an owned operation payload for the host-side `Op` representation.
-#[cfg(not(windows))]
+#[cfg(not(pe_recording))]
 #[must_use]
 pub fn capture_op<T>(value: T) -> Box<T> {
     Box::new(value)

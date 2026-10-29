@@ -4,6 +4,16 @@ use xxhash_rust::xxh3::Xxh3;
 
 fn main() {
     emitter_fingerprint();
+    // `pe_recording`: this build of the crate serves the D3D9 API side, which
+    // records each frame directly into the wire command stream. Every PE target
+    // is one; so is a native host build, where the API side and the native
+    // runtime share one copy of this crate. The host tests and the Wine-hosted
+    // unix dylib keep the owned-operation path instead.
+    println!("cargo::rustc-check-cfg=cfg(pe_recording)");
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" || std::env::var_os("CARGO_FEATURE_NATIVE_HOST").is_some() {
+        println!("cargo:rustc-cfg=pe_recording");
+    }
     println!("cargo::rustc-check-cfg=cfg(perf_tracking)");
     println!("cargo:rerun-if-env-changed=MTLD3D_PERF");
     if std::env::var("MTLD3D_PERF").is_ok_and(|v| !v.is_empty() && v != "0") {

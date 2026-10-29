@@ -62,6 +62,8 @@ pub mod hud_stats;
 pub mod ids;
 pub mod level_authority;
 pub mod multisample;
+#[cfg(feature = "native-host")]
+pub mod native_host;
 pub mod page_box;
 pub mod page_box_pool;
 pub mod passes;

@@ -273,6 +273,9 @@ pub struct PageBox {
 /// The runtime responsible for releasing a page allocation.
 enum PageOwnership {
     Native(Layout),
+    /// Allocated from the native host's application memory, released back to it.
+    #[cfg(feature = "native-host")]
+    Host,
     #[cfg(not(windows))]
     Guest {
         completion: LeaseCompletionPtr,
@@ -338,6 +341,11 @@ impl PageBox {
     #[must_use]
     pub fn try_new_uninit(logical_len: usize) -> Option<Self> {
         let (len, layout) = Self::try_layout_for(logical_len)?;
+        #[cfg(feature = "native-host")]
+        if let Some(host) = crate::native_host::get() {
+            let ptr = host.alloc_app(len, PAGE_SIZE)?;
+            return Some(Self::adopt_host(ptr, len, logical_len));
+        }
         // SAFETY: `try_layout_for` returns a non-zero-size, page-aligned Layout.
         let ptr = NonNull::new(unsafe { alloc::alloc(layout) })?;
         Some(Self::adopt(ptr, len, logical_len, layout))
@@ -349,6 +357,13 @@ impl PageBox {
     #[must_use]
     pub fn try_new_zeroed(logical_len: usize) -> Option<Self> {
         let (len, layout) = Self::try_layout_for(logical_len)?;
+        #[cfg(feature = "native-host")]
+        if let Some(host) = crate::native_host::get() {
+            let ptr = host.alloc_app(len, PAGE_SIZE)?;
+            // SAFETY: the host handed out `len` writable bytes at `ptr`.
+            unsafe { ptr.as_ptr().write_bytes(0, len) };
+            return Some(Self::adopt_host(ptr, len, logical_len));
+        }
         // SAFETY: `try_layout_for` returns a non-zero-size, page-aligned Layout.
         let ptr = NonNull::new(unsafe { alloc::alloc_zeroed(layout) })?;
         Some(Self::adopt(ptr, len, logical_len, layout))
@@ -363,6 +378,25 @@ impl PageBox {
             len,
             logical_len,
             ownership: PageOwnership::Native(layout),
+            generation: PAGE_BOX_GENERATION.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1,
+            readers: AtomicU32::new(0),
+        }
+    }
+
+    /// Wrap a block of the native host's application memory and count it.
+    ///
+    /// In a native host build every page box is application memory: a `Lock`
+    /// hands the application a pointer into one, and a host that runs the
+    /// application in an address window of its own can reach nothing else.
+    #[cfg(feature = "native-host")]
+    fn adopt_host(ptr: NonNull<u8>, len: usize, logical_len: usize) -> Self {
+        note_alloc(len);
+        PAGEBOX_LIVE_BYTES.fetch_add(len as u64, core::sync::atomic::Ordering::Relaxed);
+        Self {
+            ptr,
+            len,
+            logical_len,
+            ownership: PageOwnership::Host,
             generation: PAGE_BOX_GENERATION.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1,
             readers: AtomicU32::new(0),
         }
@@ -418,7 +452,13 @@ impl PageBox {
     /// Whether the allocating runtime can park this box in its recycle pool.
     #[must_use]
     pub const fn is_native_owned(&self) -> bool {
-        matches!(self.ownership, PageOwnership::Native(_))
+        match self.ownership {
+            PageOwnership::Native(_) => true,
+            #[cfg(feature = "native-host")]
+            PageOwnership::Host => true,
+            #[cfg(not(windows))]
+            PageOwnership::Guest { .. } => false,
+        }
     }
 
     /// Address of the fixed-width reader count kept alive by a page lease.
@@ -430,6 +470,8 @@ impl PageBox {
     const fn reader_count(&self) -> &AtomicU32 {
         match &self.ownership {
             PageOwnership::Native(_) => &self.readers,
+            #[cfg(feature = "native-host")]
+            PageOwnership::Host => &self.readers,
             #[cfg(not(windows))]
             PageOwnership::Guest { readers, .. } => {
                 // SAFETY: from_guest_lease pins the original aligned counter until Drop.
@@ -544,6 +586,17 @@ impl Drop for PageBox {
     fn drop(&mut self) {
         let layout = match &self.ownership {
             PageOwnership::Native(layout) => *layout,
+            #[cfg(feature = "native-host")]
+            PageOwnership::Host => {
+                note_free(self.len);
+                PAGEBOX_LIVE_BYTES
+                    .fetch_sub(self.len as u64, core::sync::atomic::Ordering::Relaxed);
+                let host = crate::native_host::get().expect("a host page box outlives no host");
+                // SAFETY: the block came from this host's `alloc_app` for
+                // `self.len` bytes, and nothing else owns it.
+                unsafe { host.free_app(self.ptr, self.len) };
+                return;
+            }
             #[cfg(not(windows))]
             PageOwnership::Guest { completion, .. } => {
                 // SAFETY: from_guest_lease keeps this cell alive until this final acknowledgment.
