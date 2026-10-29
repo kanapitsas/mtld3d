@@ -692,13 +692,20 @@ pub fn find(view: usize) -> Option<Arc<Attachment>> {
     lock().get(&view).cloned()
 }
 
-/// The live record whose layer is `layer`, if any.
+/// The newest live record whose layer is `layer`, if any.
 ///
-/// A linear scan over a handful of records at most; the callers are the
-/// Reset path, never a present.
+/// A Wine layer belongs to one view, so one record names it. A native
+/// host's layer is shared by every device on its window, and the newest one,
+/// which configured the layer last, is the one a layer-keyed call means. A
+/// linear scan over a handful of records at most; the callers are the Reset
+/// path and teardown, never a present.
 #[must_use]
 pub fn find_by_layer(layer: usize) -> Option<Arc<Attachment>> {
-    lock().values().find(|att| att.layer == layer).cloned()
+    lock()
+        .values()
+        .filter(|att| att.layer == layer)
+        .max_by_key(|att| att.attached_at)
+        .cloned()
 }
 
 /// What [`retain_newest_surface_on`] found on a window.

@@ -194,6 +194,29 @@ fn lookup_by_layer_finds_its_own_record() {
 }
 
 #[test]
+fn lookup_by_a_shared_layer_finds_the_newest_record() {
+    // A native host's two devices on one window: two views, one layer.
+    let older_view = test_address_block();
+    let newer_view = older_view + 0x1000;
+    let layer = older_view + 0x100;
+
+    let older = register(older_view, layer, &latches(AttachFlags::empty(), 1, None));
+    // `attached_at` orders the records; make the two instants distinct.
+    std::thread::sleep(Duration::from_millis(2));
+    let newer = register(newer_view, layer, &latches(AttachFlags::empty(), 1, None));
+    assert!(is_same(&find_by_layer(layer).expect("newest"), &newer));
+    assert!(is_same(&find(older_view).expect("older by view"), &older));
+
+    unregister(newer_view);
+    assert!(is_same(
+        &find_by_layer(layer).expect("the older record survives"),
+        &older
+    ));
+    unregister(older_view);
+    assert!(find_by_layer(layer).is_none(), "no record is left on the layer");
+}
+
+#[test]
 fn each_record_seeds_its_own_defaults() {
     let view = test_address_block();
 

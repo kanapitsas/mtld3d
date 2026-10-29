@@ -9,8 +9,17 @@
 //! `macdrv` that the rest of the runtime calls, so the presenter, the gamma
 //! path and device teardown are the same code in both builds:
 //!
-//! - The attachment record is keyed by the layer's address, which also
-//!   stands in for the view handle the PE side keeps.
+//! - Each attach has an identity of its own, the address of a box holding
+//!   the layer retain that attach took, which stands in for the view handle
+//!   the PE side keeps and keys the attachment record. Two devices on one
+//!   window share the host's one layer, as two devices of the Wine build
+//!   share the window (a game creates its next device before it releases
+//!   the last, or probes with a second one), so the layer's address cannot
+//!   name a record: each device retires its own record and gives back its
+//!   own retain, whichever goes first. The newest device configured the
+//!   layer last and is the one its layer-keyed calls (`Reset`'s pacing, the
+//!   gamma ramp) find, as in the Wine build the newest device's view is the
+//!   one shown.
 //! - The layer is configured on the attaching thread, the device's API
 //!   thread, inside an explicit transaction: device, pixel format, opacity,
 //!   `framebufferOnly`, pacing and drawable size, never anything of a view or
@@ -109,18 +118,14 @@ pub fn attach_metal_layer(
     let layer_addr = Retained::as_ptr(&layer) as usize;
     let panel_hz = host.display_modes().first().map_or(60, |&(_, _, hz)| hz);
     let min_duration = min_present_duration(f64::from(panel_hz), &pacing);
-    if let Some(stale) = attachment::unregister(layer_addr) {
-        mtld3d_shared::log_once_warn!(
-            target: LOG_TARGET,
-            "present: layer {layer_addr:#x} attached again without a teardown between; the \
-             earlier record is dropped",
-        );
-        drop(stale);
-        // SAFETY: the dropped record held the retain an earlier attach took.
-        drop(unsafe { Retained::from_raw(layer_addr as *mut CAMetalLayer) });
-    }
+    let bounds = layer.bounds();
+    let contents_scale = layer.contentsScale();
+    // The retain taken above moves into the attach's own box, whose address
+    // is the view handle and the record's key until `retire_metal_view`
+    // gives the box, and the retain with it, back.
+    let token = Box::into_raw(Box::new(layer)) as usize;
     let att = attachment::register(
-        layer_addr,
+        token,
         layer_addr,
         &AttachLatches {
             hwnd,
@@ -133,22 +138,18 @@ pub fn attach_metal_layer(
     );
     att.set_min_present_duration(min_duration);
     attachment::publish_backing_scale(&att, 1);
-    let bounds = layer.bounds();
     info!(
         target: LOG_TARGET,
-        "present: host layer {layer_addr:#x} of window {hwnd:#x}: guest {width}x{height}, layer \
-         {:.0}x{:.0}pt @{:.2}x, minimum present duration {min_duration:.5}s ({panel_hz} Hz)",
+        "present: host layer {layer_addr:#x} of window {hwnd:#x} attached as {token:#x}: guest \
+         {width}x{height}, layer {:.0}x{:.0}pt @{contents_scale:.2}x, minimum present duration \
+         {min_duration:.5}s ({panel_hz} Hz)",
         bounds.size.width,
         bounds.size.height,
-        layer.contentsScale(),
     );
-    // The retain taken above now belongs to the record's address until
-    // `retire_metal_view` gives it back.
-    let raw = Retained::into_raw(layer);
-    // SAFETY: `raw` is the retained layer, the address the record is keyed by.
-    let view_handle = unsafe { MetalHandle::<NSViewKind>::new(raw as u64) };
-    // SAFETY: the same retained layer.
-    let layer_handle = unsafe { MetalHandle::<CAMetalLayerKind>::new(raw as u64) };
+    // SAFETY: `token` is the box that owns this attach's layer retain.
+    let view_handle = unsafe { MetalHandle::<NSViewKind>::new(token as u64) };
+    // SAFETY: the layer that box keeps retained until the view is retired.
+    let layer_handle = unsafe { MetalHandle::<CAMetalLayerKind>::new(layer_addr as u64) };
     Some((
         view_handle,
         layer_handle,
@@ -160,22 +161,28 @@ pub fn attach_metal_layer(
 }
 
 /// Retire the record `view_handle` names, at device teardown or a retargeting `Reset`.
+///
+/// The layer's gamma table goes with the last record on the layer: another
+/// device presenting into it keeps the ramp it set.
 pub fn detach_metal_layer(view_handle: MetalHandle<NSViewKind>) -> Option<Arc<Attachment>> {
-    let addr = usize::try_from(view_handle.raw()).expect("a 64-bit host addresses every layer");
+    let addr = usize::try_from(view_handle.raw()).expect("a 64-bit host addresses every view");
     let att = attachment::unregister(addr)?;
-    super::gamma::detach(&att);
+    if attachment::find_by_layer(att.layer()).is_none() {
+        super::gamma::detach(&att);
+    }
     Some(att)
 }
 
-/// Give back the layer retain the attach took; the host keeps the layer itself.
+/// Give back the layer retain this view's attach took; the host keeps the layer itself.
 pub fn retire_metal_view(view_handle: MetalHandle<NSViewKind>, _record: Option<&Attachment>) {
     if view_handle.is_null() {
         return;
     }
-    let addr = usize::try_from(view_handle.raw()).expect("a 64-bit host addresses every layer");
-    // SAFETY: the view handle is the retained layer `attach_metal_layer`
-    // handed out, retired once by the device that holds it.
-    drop(unsafe { Retained::from_raw(addr as *mut CAMetalLayer) });
+    let token = usize::try_from(view_handle.raw()).expect("a 64-bit host addresses every view");
+    // SAFETY: the view handle is the box `attach_metal_layer` handed out,
+    // retired once by the device that holds it; dropping it gives back the
+    // retain that attach took.
+    drop(unsafe { Box::from_raw(token as *mut Retained<CAMetalLayer>) });
 }
 
 /// A host has no client surface to show; marks the device as having drawn.

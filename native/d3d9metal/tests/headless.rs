@@ -34,6 +34,8 @@ use objc2_quartz_core::CAMetalLayer;
 const SIZE: u32 = 64;
 /// The window handle the host hands the layer: an opaque value, never dereferenced.
 const HWND: usize = 0x5157_0001;
+/// The window two devices are created on at once, with a layer of its own.
+const SHARED_HWND: usize = 0x5157_0002;
 /// The clear colour, opaque red, as `D3DCOLOR`.
 const RED: u32 = 0xFFFF_0000;
 /// The triangle's colour, opaque green, as `D3DCOLOR`.
@@ -65,8 +67,12 @@ static APP_BLOCKS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 static BLOCKING_DEPTH: AtomicU32 = AtomicU32::new(0);
 /// `blocking_begin` calls in all.
 static BLOCKING_CALLS: AtomicU32 = AtomicU32::new(0);
+/// Held by each test for its whole run: the host's counters are process-wide.
+static SERIAL: Mutex<()> = Mutex::new(());
 /// The host's layer, as an address, for the callback.
 static LAYER: AtomicUsize = AtomicUsize::new(0);
+/// The layer of [`SHARED_HWND`], which two devices present into, as an address.
+static SHARED_LAYER: AtomicUsize = AtomicUsize::new(0);
 
 unsafe extern "C" fn metal_layer(
     _user: *mut c_void,
@@ -74,14 +80,16 @@ unsafe extern "C" fn metal_layer(
     width: *mut u32,
     height: *mut u32,
 ) -> *mut c_void {
-    if hwnd as usize != HWND {
-        return core::ptr::null_mut();
-    }
+    let layer = match hwnd as usize {
+        HWND => LAYER.load(Ordering::Acquire),
+        SHARED_HWND => SHARED_LAYER.load(Ordering::Acquire),
+        _ => return core::ptr::null_mut(),
+    };
     // SAFETY: the layer passes writable out-params.
     unsafe { width.write(SIZE) };
     // SAFETY: as above.
     unsafe { height.write(SIZE) };
-    LAYER.load(Ordering::Acquire) as *mut c_void
+    layer as *mut c_void
 }
 
 unsafe extern "C" fn alloc_app(_user: *mut c_void, size: usize, align: usize) -> *mut c_void {
@@ -204,6 +212,17 @@ fn init_host() {
     static INIT: Once = Once::new();
     static STATUS: AtomicI32 = AtomicI32::new(i32::MIN);
     INIT.call_once(|| {
+        // Draws wait for their shaders rather than leaving the frame (the
+        // frame is read back at once), and no shader cache is written beside
+        // the test.
+        // SAFETY: set once, before any interface reads it, under the `Once`
+        // every test passes through first; the tests read no environment.
+        unsafe {
+            std::env::set_var(
+                "MTLD3D_CONFIG",
+                "shader.asyncCompile = false; shaderCache.enable = false",
+            );
+        }
         let host = NativeHost {
             size: u32::try_from(size_of::<NativeHost>()).unwrap(),
             user: core::ptr::null_mut(),
@@ -230,16 +249,9 @@ fn init_host() {
 
 #[test]
 fn clear_draw_and_read_back_through_host_memory() {
-    // Draws wait for their shaders rather than leaving the frame (the frame is
-    // read back at once), and no shader cache is written beside the test.
-    // SAFETY: set before the interface reads it, while no other thread of this
-    // process reads the environment.
-    unsafe {
-        std::env::set_var(
-            "MTLD3D_CONFIG",
-            "shader.asyncCompile = false; shaderCache.enable = false",
-        );
-    }
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let layer = make_layer();
     LAYER.store(Retained::as_ptr(&layer) as usize, Ordering::Release);
     init_host();
@@ -477,5 +489,207 @@ fn clear_draw_and_read_back_through_host_memory() {
         0,
         "unbalanced blocking calls"
     );
+    drop(layer);
+}
+
+/// The present parameters of a windowed `SIZE`-square device on `hwnd`.
+const fn windowed_params(hwnd: usize) -> D3DPRESENT_PARAMETERS {
+    D3DPRESENT_PARAMETERS {
+        back_buffer_width: SIZE,
+        back_buffer_height: SIZE,
+        back_buffer_format: D3DFMT_X8R8G8B8,
+        back_buffer_count: 1,
+        multi_sample_type: 0,
+        multi_sample_quality: 0,
+        swap_effect: D3DSWAPEFFECT_DISCARD,
+        device_window: hwnd,
+        windowed: 1,
+        enable_auto_depth_stencil: 0,
+        auto_depth_stencil_format: 0,
+        flags: 0,
+        full_screen_refresh_rate_in_hz: 0,
+        presentation_interval: D3DPRESENT_INTERVAL_IMMEDIATE,
+    }
+}
+
+/// A windowed device of `d3d` on `hwnd`.
+///
+/// # Safety
+///
+/// `d3d` is a live `IDirect3D9`.
+unsafe fn create_device(d3d: *mut c_void, hwnd: usize) -> *mut c_void {
+    // SAFETY: the caller's contract.
+    let d3d_vtbl = unsafe { vtbl::<IDirect3D9Vtbl>(d3d) };
+    let mut pp = windowed_params(hwnd);
+    let mut device: *mut c_void = core::ptr::null_mut();
+    check!(
+        (d3d_vtbl.create_device)(
+            d3d,
+            0,
+            D3DDEVTYPE_HAL,
+            hwnd as *mut c_void,
+            D3DCREATE_HARDWARE_VERTEXPROCESSING,
+            (&raw mut pp).cast(),
+            &raw mut device,
+        ),
+        "CreateDevice"
+    );
+    assert!(!device.is_null());
+    device
+}
+
+/// Clear `device`'s back buffer to `color`, read its centre back, and present it.
+///
+/// # Safety
+///
+/// `device` is a live `IDirect3DDevice9` with a `SIZE`-square back buffer.
+unsafe fn clear_read_and_present(device: *mut c_void, color: u32) -> u32 {
+    // SAFETY: the caller's contract.
+    let dev = unsafe { vtbl::<IDirect3DDevice9Vtbl>(device) };
+    check!(
+        (dev.clear)(device, 0, core::ptr::null(), D3DCLEAR_TARGET, color, 1.0, 0),
+        "Clear"
+    );
+    let mut back: *mut c_void = core::ptr::null_mut();
+    let mut readback: *mut c_void = core::ptr::null_mut();
+    check!(
+        (dev.get_back_buffer)(device, 0, 0, 0, &raw mut back),
+        "GetBackBuffer"
+    );
+    check!(
+        (dev.create_offscreen_plain_surface)(
+            device,
+            SIZE,
+            SIZE,
+            D3DFMT_A8R8G8B8,
+            D3DPOOL_SYSTEMMEM,
+            &raw mut readback,
+            core::ptr::null_mut(),
+        ),
+        "CreateOffscreenPlainSurface"
+    );
+    check!(
+        (dev.get_render_target_data)(device, back, readback),
+        "GetRenderTargetData"
+    );
+    // SAFETY: `readback` is the live surface just created.
+    let surface = unsafe { vtbl::<IDirect3DSurface9Vtbl>(readback) };
+    let mut rect = D3DLOCKED_RECT {
+        pitch: 0,
+        bits: core::ptr::null_mut(),
+    };
+    check!(
+        (surface.lock_rect)(
+            readback,
+            (&raw mut rect).cast(),
+            core::ptr::null(),
+            D3DLOCK_READONLY
+        ),
+        "LockRect"
+    );
+    // SAFETY: the lock is live on a SIZE-square A8R8G8B8 surface.
+    let center = unsafe { pixel(&rect, SIZE / 2, SIZE / 2) };
+    check!((surface.unlock_rect)(readback), "UnlockRect");
+    for _ in 0..3 {
+        check!(
+            (dev.present)(
+                device,
+                core::ptr::null(),
+                core::ptr::null(),
+                core::ptr::null_mut(),
+                core::ptr::null(),
+            ),
+            "Present"
+        );
+    }
+    for child in [readback, back] {
+        // SAFETY: this function holds one reference on each.
+        unsafe { release(child) };
+    }
+    center
+}
+
+/// The retain count of `layer`, read through Core Foundation.
+fn retain_count(layer: &CAMetalLayer) -> isize {
+    // SAFETY: every Objective-C object is a `CFType` to Core Foundation's
+    // retain-count functions, which only read the count.
+    let cf = unsafe { &*core::ptr::from_ref(layer).cast::<objc2_core_foundation::CFType>() };
+    objc2_core_foundation::CFGetRetainCount(Some(cf))
+}
+
+/// Two devices on one window share its layer, and either may go first.
+///
+/// A game creates its next device before it releases the last, or probes
+/// with a second one. Each attach owns its retain on the host's layer: the
+/// device released first gives back its own and leaves the other's record
+/// alone, so the survivor still draws and presents, and once both are gone
+/// the layer has the retains it had before.
+#[test]
+fn two_devices_share_a_layer_in_either_release_order() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let layer = make_layer();
+    SHARED_LAYER.store(Retained::as_ptr(&layer) as usize, Ordering::Release);
+    init_host();
+    let d3d = d3d9metal::direct3d_create9(32);
+    assert!(!d3d.is_null(), "Direct3DCreate9");
+    let before = retain_count(&layer);
+
+    for older_goes_first in [true, false] {
+        // SAFETY: `d3d` is live.
+        let older = unsafe { create_device(d3d, SHARED_HWND) };
+        let with_one = retain_count(&layer);
+        assert!(with_one > before, "a device holds the layer");
+        // SAFETY: as above.
+        let newer = unsafe { create_device(d3d, SHARED_HWND) };
+        assert_eq!(
+            retain_count(&layer) - with_one,
+            with_one - before,
+            "the second device takes retains of its own"
+        );
+        // SAFETY: both devices are live and SIZE-square.
+        let drawn = unsafe { clear_read_and_present(older, RED) };
+        assert_eq!(drawn & 0xFF_FFFF, RED & 0xFF_FFFF, "the older device draws");
+        // SAFETY: as above.
+        let drawn = unsafe { clear_read_and_present(newer, GREEN) };
+        assert_eq!(
+            drawn & 0xFF_FFFF,
+            GREEN & 0xFF_FFFF,
+            "the newer device draws"
+        );
+
+        let (first, survivor) = if older_goes_first {
+            (older, newer)
+        } else {
+            (newer, older)
+        };
+        // SAFETY: the test's only reference on `first`.
+        let left = unsafe { release(first) };
+        assert_eq!(left, 0, "the first device's last reference");
+        assert_eq!(
+            retain_count(&layer),
+            with_one,
+            "releasing one device gives back its retains alone"
+        );
+        let blue = 0xFF00_00FF;
+        // SAFETY: the survivor is live and SIZE-square.
+        let drawn = unsafe { clear_read_and_present(survivor, blue) };
+        assert_eq!(
+            drawn & 0xFF_FFFF,
+            blue & 0xFF_FFFF,
+            "the survivor still draws and presents"
+        );
+        // SAFETY: the test's only reference on the survivor.
+        let left = unsafe { release(survivor) };
+        assert_eq!(left, 0, "the survivor's last reference");
+        assert_eq!(
+            retain_count(&layer),
+            before,
+            "with both devices gone the layer has the retains it had"
+        );
+    }
+    // SAFETY: the test's reference on the interface, its last.
+    assert_eq!(unsafe { release(d3d) }, 0, "the interface's last reference");
     drop(layer);
 }

@@ -123,8 +123,10 @@ static: one process has one host application):
   the host's opaque pointer, and the size its back buffer defaults to. The
   runtime's `metal/host_layer.rs` takes the place of `macdrv`: it configures
   the layer on the attaching thread inside a transaction of its own, keys the
-  attachment record by the layer's address and leaves the window, its screen
-  and the cursor to the host. No `AppKit` object is touched, nothing hops to
+  attachment record by an identity of each attach's own (a box holding that
+  attach's layer retain, whose address is the view handle), so two devices
+  on one window share its layer and either can go first, and leaves the
+  window, its screen and the cursor to the host. No `AppKit` object is touched, nothing hops to
   the main thread, and the presenter resizes the drawable to the layer's
   bounds as in the Wine build.
 - `alloc_app` and `free_app` back every `PageBox` a `Lock` can hand out, since
