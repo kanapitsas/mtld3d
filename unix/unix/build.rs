@@ -17,6 +17,12 @@ fn main() {
         return;
     }
 
+    // The native host build links this crate into `libd3d9metal`, which names
+    // itself, and has no macdrv, so no delegate to forward to.
+    if std::env::var_os("CARGO_FEATURE_NATIVE_HOST").is_some() {
+        return;
+    }
+
     println!("cargo:rustc-link-arg-cdylib=-Wl,-install_name,@rpath/mtld3d.so");
 
     // Every Rust frame of this crate aborts on unwind (`panic = "abort"`),

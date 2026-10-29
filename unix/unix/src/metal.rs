@@ -9,7 +9,10 @@ mod frame_signal;
 mod gamma;
 mod gpu_time;
 pub mod handle;
+#[cfg(feature = "native-host")]
+mod host_layer;
 mod layer;
+#[cfg(not(feature = "native-host"))]
 mod macdrv;
 mod null_texture;
 mod pipeline;
@@ -32,6 +35,8 @@ pub use command::{BlitArgs, blit_texture_to_buffer, submit_frame, wait_for_gpu_r
 pub use device::{create_command_queue, default_device_info, destroy_command_queue};
 pub use frame_signal::{FrameSignal, FrameWait, PACED_PRESENT_CAP};
 pub use gamma::set_gamma_ramp;
+#[cfg(feature = "native-host")]
+use host_layer as macdrv;
 pub use layer::{LayerAttachRequest, PresentPacing};
 pub use macdrv::{
     attach_metal_layer, declare_latency_critical_activity, detach_metal_layer,

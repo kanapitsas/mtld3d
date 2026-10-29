@@ -200,8 +200,12 @@ pub enum GammaStage {
     Copy,
     Passthrough,
     Bt2446,
+    /// The cursor overlay's stages; a native host build draws no cursor.
+    #[cfg(not(feature = "native-host"))]
     CursorCopy,
+    #[cfg(not(feature = "native-host"))]
     CursorPassthrough,
+    #[cfg(not(feature = "native-host"))]
     CursorBt2446,
 }
 
@@ -218,11 +222,14 @@ impl GammaStage {
                 "mtld3d_present_ps_hdr_bt2446_gamma",
                 MTLPixelFormat::RGBA16Float,
             ),
+            #[cfg(not(feature = "native-host"))]
             Self::CursorCopy => ("mtld3d_cursor_ps_copy_gamma", MTLPixelFormat::BGRA8Unorm),
+            #[cfg(not(feature = "native-host"))]
             Self::CursorPassthrough => (
                 "mtld3d_cursor_ps_hdr_passthrough_gamma",
                 MTLPixelFormat::RGBA16Float,
             ),
+            #[cfg(not(feature = "native-host"))]
             Self::CursorBt2446 => (
                 "mtld3d_cursor_ps_hdr_bt2446_gamma",
                 MTLPixelFormat::RGBA16Float,

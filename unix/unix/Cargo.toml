@@ -7,8 +7,16 @@ license.workspace = true
 description.workspace = true
 authors.workspace = true
 
+# `cdylib` is `mtld3d.so`. The `rlib` is what the native host build
+# (`native/`) links into `libd3d9metal`; the Wine build leaves it unused.
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+# `native-host` builds the runtime for a native host application instead of
+# Wine: no macdrv, no AppKit, no signal handler, and the dispatcher is called
+# in process (docs/ARCHITECTURE.md "The native host linkage").
+[features]
+native-host = ["mtld3d-core/native-host"]
 
 [dependencies]
 mtld3d-core = { path = "../../windows/core", features = ["disk-cache"] }
@@ -20,7 +28,6 @@ libloading = { workspace = true }
 mtld3d-shared = { workspace = true }
 log = { workspace = true }
 objc2 = { workspace = true }
-objc2-app-kit = { workspace = true }
 objc2-core-foundation = { workspace = true }
 objc2-core-graphics = { workspace = true }
 objc2-foundation = { workspace = true }
@@ -30,6 +37,10 @@ objc2-quartz-core = { workspace = true }
 rustc-hash = { workspace = true }
 snmalloc-rs = { workspace = true }
 strum = { workspace = true }
+
+# AppKit exists on macOS only; the native host build for iOS goes without it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { workspace = true }
 
 [build-dependencies]
 cc = { workspace = true }

@@ -32,13 +32,17 @@
 //! the registry lock sits at the bottom of every order. It is not taken
 //! anywhere else.
 
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+#[cfg(not(feature = "native-host"))]
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::{
     sync::{Arc, LazyLock, Mutex},
     time::{Duration, Instant},
 };
 
+#[cfg(not(feature = "native-host"))]
 use mtld3d_shared::mtl::{ClientSurfaceRequest, ColorSpacePolicy};
+#[cfg(not(feature = "native-host"))]
 use objc2::{MainThreadMarker, rc::Retained};
 use rustc_hash::FxHashMap;
 
@@ -98,6 +102,7 @@ pub struct AttachLatches {
     ///
     /// Reconfiguring the layer for a new screen has to pick the colorspace
     /// family attach would have picked for it.
+    #[cfg(not(feature = "native-host"))]
     pub color_space: ColorSpacePolicy,
     /// The guest's vsync ask and the user's frame cap, as `pack_pacing` folds them.
     pub pacing_bits: u64,
@@ -106,13 +111,16 @@ pub struct AttachLatches {
     /// Address of the PE-side `AtomicU32` a changed backing scale is published into, `0` = none.
     pub backing_scale_sink: usize,
     /// Address of the PE-side `AtomicU32` a cursor re-apply is asked through, `0` = none.
+    #[cfg(not(feature = "native-host"))]
     pub cursor_kick_sink: usize,
     /// Address of the PE-side `AtomicU32` a client surface present is asked through, `0` = none.
+    #[cfg(not(feature = "native-host"))]
     pub client_surface_request_sink: usize,
     /// Wine's client surface the view sits in, `0` = none.
     ///
     /// The record owns one reference on it, taken at attach and given back
     /// by the teardown that unregisters the record.
+    #[cfg(not(feature = "native-host"))]
     pub client_surface: usize,
 }
 
@@ -132,16 +140,20 @@ pub struct Attachment {
     /// See [`AttachLatches::backing_scale_sink`].
     backing_scale_sink: usize,
     /// See [`AttachLatches::cursor_kick_sink`].
+    #[cfg(not(feature = "native-host"))]
     cursor_kick_sink: usize,
     /// See [`AttachLatches::client_surface_request_sink`].
+    #[cfg(not(feature = "native-host"))]
     client_surface_request_sink: usize,
     /// See [`AttachLatches::client_surface`].
+    #[cfg(not(feature = "native-host"))]
     client_surface: usize,
     /// The main-thread watch on the hidden state of the view's client view, `0` = none.
     ///
     /// An address `client_view_watch` hands out and takes back, dereferenced
     /// on the main thread alone; the record only carries it from the attach
     /// that installs the watch to the teardown that removes it.
+    #[cfg(not(feature = "native-host"))]
     client_view_watch: AtomicUsize,
     /// When the record was registered, which orders the devices on one window.
     attached_at: Instant,
@@ -158,12 +170,15 @@ pub struct Attachment {
     /// attach on a flush keeps that view shown over the parked layer's last
     /// frame until the new device's first frame replaces it.
     drew_frame: AtomicBool,
+    #[cfg(not(feature = "native-host"))]
     flags: AttachFlags,
+    #[cfg(not(feature = "native-host"))]
     color_space: ColorSpacePolicy,
     /// Raw `NSWindow*` the occlusion observer filters notifications by.
     ///
     /// Written on the main thread, compared against the notification's own
     /// live object, never dereferenced. `0` while the view has no window.
+    #[cfg(not(feature = "native-host"))]
     window: AtomicUsize,
     /// Whether the layer currently carries the EDR configuration.
     ///
@@ -195,6 +210,7 @@ pub struct Attachment {
     /// `0` = never logged; the first refresh always logs to establish a
     /// baseline distinct from the attach-time line. Written only on the main
     /// thread.
+    #[cfg(not(feature = "native-host"))]
     last_logged_headroom_bits: AtomicU32,
     /// Whether a headroom refresh is already queued on the main thread.
     ///
@@ -263,18 +279,26 @@ impl Attachment {
             layer,
             hwnd: latches.hwnd,
             backing_scale_sink: latches.backing_scale_sink,
+            #[cfg(not(feature = "native-host"))]
             cursor_kick_sink: latches.cursor_kick_sink,
+            #[cfg(not(feature = "native-host"))]
             client_surface_request_sink: latches.client_surface_request_sink,
+            #[cfg(not(feature = "native-host"))]
             client_surface: latches.client_surface,
+            #[cfg(not(feature = "native-host"))]
             client_view_watch: AtomicUsize::new(0),
             attached_at: Instant::now(),
             drew_frame: AtomicBool::new(false),
+            #[cfg(not(feature = "native-host"))]
             flags: latches.flags,
+            #[cfg(not(feature = "native-host"))]
             color_space: latches.color_space,
+            #[cfg(not(feature = "native-host"))]
             window: AtomicUsize::new(0),
             hdr_active: AtomicBool::new(latches.flags.contains(AttachFlags::HDR_ACTIVE)),
             window_occluded: AtomicBool::new(false),
             current_headroom_bits: AtomicU32::new(1.0_f32.to_bits()),
+            #[cfg(not(feature = "native-host"))]
             last_logged_headroom_bits: AtomicU32::new(0),
             headroom_refresh_pending: AtomicBool::new(false),
             presents_since_headroom_refresh: AtomicU64::new(HEADROOM_REFRESH_PRESENTS),
@@ -304,6 +328,7 @@ impl Attachment {
     }
 
     /// The raw `NSView*` address this record is keyed by; compared, never dereferenced here.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub const fn view(&self) -> usize {
         self.view
@@ -322,6 +347,7 @@ impl Attachment {
     }
 
     /// Wine's client surface the record holds a reference on, `0` = none.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub const fn client_surface(&self) -> usize {
         self.client_surface
@@ -336,43 +362,51 @@ impl Attachment {
     }
 
     /// Whether the device submitted a frame since the record was registered.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub fn drew_frame(&self) -> bool {
         self.drew_frame.load(Ordering::Relaxed)
     }
 
     /// Hand the record the address of its client view watch, giving back any it held.
+    #[cfg(not(feature = "native-host"))]
     pub fn replace_client_view_watch(&self, watch: usize) -> usize {
         self.client_view_watch.swap(watch, Ordering::AcqRel)
     }
 
     /// Take the client view watch address out of the record, `0` when it holds none.
+    #[cfg(not(feature = "native-host"))]
     pub fn take_client_view_watch(&self) -> usize {
         self.client_view_watch.swap(0, Ordering::AcqRel)
     }
 
     /// `color.hdr.enable` as the attach carried it.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub const fn hdr_enable_requested(&self) -> bool {
         self.flags.contains(AttachFlags::HDR_ENABLE_REQUESTED)
     }
 
     /// `color.space` as the attach carried it.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub const fn color_space(&self) -> ColorSpacePolicy {
         self.color_space
     }
 
     /// The raw `NSWindow*` the occlusion observer matches, `0` = none.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub fn window(&self) -> usize {
         self.window.load(Ordering::Relaxed)
     }
 
+    #[cfg(not(feature = "native-host"))]
     pub fn set_window(&self, window: usize) {
         self.window.store(window, Ordering::Relaxed);
     }
 
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub fn hdr_active(&self) -> bool {
         self.hdr_active.load(Ordering::Relaxed)
@@ -403,6 +437,7 @@ impl Attachment {
     }
 
     /// The headroom last logged, `None` = never logged.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub fn last_logged_headroom(&self) -> Option<f32> {
         match self.last_logged_headroom_bits.load(Ordering::Relaxed) {
@@ -411,6 +446,7 @@ impl Attachment {
         }
     }
 
+    #[cfg(not(feature = "native-host"))]
     pub fn set_last_logged_headroom(&self, headroom: f32) {
         self.last_logged_headroom_bits
             .store(headroom.to_bits(), Ordering::Relaxed);
@@ -541,6 +577,7 @@ impl Attachment {
     }
 
     /// The backing scale last published to the PE side.
+    #[cfg(not(feature = "native-host"))]
     #[must_use]
     pub fn backing_scale(&self) -> u32 {
         self.current_backing_scale.load(Ordering::Relaxed)
@@ -665,6 +702,7 @@ pub fn find_by_layer(layer: usize) -> Option<Arc<Attachment>> {
 }
 
 /// What [`retain_newest_surface_on`] found on a window.
+#[cfg(not(feature = "native-host"))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum NewestSurface {
     /// No live record on the window holds a surface, or the retain refused it.
@@ -687,6 +725,7 @@ pub enum NewestSurface {
 /// back. A newest record whose device has not submitted a frame yet is
 /// reported and not retained: presenting its surface before then would have
 /// Wine keep a client view shown whose layer holds nothing.
+#[cfg(not(feature = "native-host"))]
 pub fn retain_newest_surface_on(hwnd: u64, retain: impl FnOnce(usize) -> usize) -> NewestSurface {
     let map = lock();
     let found = newest_with_surface_on(&map, hwnd).map(|newest| {
@@ -713,6 +752,7 @@ pub fn retain_newest_surface_on(hwnd: u64, retain: impl FnOnce(usize) -> usize) 
 /// it would change nothing. `false`, and nothing written, for a view no live
 /// record names, a record without a surface or a request word, or one a
 /// newer device on its window outranks.
+#[cfg(not(feature = "native-host"))]
 pub fn request_client_surface(view: usize, reason: ClientSurfaceRequest) -> bool {
     let map = lock();
     let Some(att) = map.get(&view) else {
@@ -736,6 +776,7 @@ pub fn request_client_surface(view: usize, reason: ClientSurfaceRequest) -> bool
 /// and the newest device's first frame presents its surface. `false`, and
 /// nothing written, for a view no live record names or a record without a
 /// surface or a request word.
+#[cfg(not(feature = "native-host"))]
 pub fn request_first_frame_present(view: usize) -> bool {
     let map = lock();
     let Some(att) = map.get(&view) else {
@@ -755,6 +796,7 @@ pub fn request_first_frame_present(view: usize) -> bool {
 /// The caller found `att` in the locked registry and holds the lock across
 /// this call: the record's teardown unregisters it under the same lock before
 /// the PE side drops the word.
+#[cfg(not(feature = "native-host"))]
 fn write_request(att: &Attachment, reason: ClientSurfaceRequest) -> bool {
     if att.client_surface_request_sink == 0 {
         return false;
@@ -769,6 +811,7 @@ fn write_request(att: &Attachment, reason: ClientSurfaceRequest) -> bool {
 }
 
 /// The newest live record on `hwnd` that holds a client surface; `map` is the locked registry.
+#[cfg(not(feature = "native-host"))]
 fn newest_with_surface_on(
     map: &FxHashMap<usize, Arc<Attachment>>,
     hwnd: u64,
@@ -779,6 +822,7 @@ fn newest_with_surface_on(
 }
 
 /// A snapshot of every live record, for a main-thread observer to walk.
+#[cfg(not(feature = "native-host"))]
 #[must_use]
 pub fn live() -> Vec<Arc<Attachment>> {
     lock().values().cloned().collect()
@@ -789,7 +833,9 @@ pub fn live() -> Vec<Arc<Attachment>> {
 /// The marker is the caller's proof that it is on the main thread, where it
 /// goes on to walk the view; the registry only answers whether the record is
 /// still live. This and [`retain_layer`] are the only places a view or a
-/// layer is resurrected from the address a record holds.
+/// layer is resurrected from the address a record holds. A native host build
+/// has no view.
+#[cfg(not(feature = "native-host"))]
 pub fn retain_view(
     att: &Arc<Attachment>,
     _mtm: MainThreadMarker,
@@ -810,6 +856,7 @@ pub fn retain_view(
 /// The marker is the caller's proof that it is on the main thread, where it
 /// goes on to configure the layer, for the same reason [`retain_view`] takes
 /// one.
+#[cfg(not(feature = "native-host"))]
 pub fn retain_layer(
     att: &Arc<Attachment>,
     _mtm: MainThreadMarker,
@@ -851,6 +898,7 @@ pub fn publish_backing_scale(att: &Arc<Attachment>, scale: u32) {
 /// so every device gets it rather than guessing which one the pointer
 /// concerns. The store is `Release` against the PE side's `AcqRel` swap; the
 /// flag is the whole message.
+#[cfg(not(feature = "native-host"))]
 pub fn request_cursor_kick_all() {
     let map = lock();
     for att in map.values().filter(|att| att.cursor_kick_sink != 0) {

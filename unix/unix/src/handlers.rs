@@ -60,7 +60,11 @@ pub extern "C" fn init_logger_handler(args: *mut c_void) -> i32 {
         // install the always-on signal handler.
         mtld3d_shared::crumb::init();
         mtld3d_shared::crumb::set_write_sink(crate::log_file::write_bytes);
-        crate::crash::install();
+        // A native host build runs inside the host's process, whose signals
+        // are the host's to handle.
+        if !cfg!(feature = "native-host") {
+            crate::crash::install();
+        }
         // Declare to macOS that we're a latency-critical game, not idle UI, so
         // it keeps the process out of App Nap / display throttling and the
         // compositor keeps cycling the layer even when the on-screen scene is
@@ -109,6 +113,7 @@ pub extern "C" fn open_log_handler(args: *mut c_void) -> i32 {
     };
     // Ahead of the location checks: the checker gates AppKit use for the
     // rest of the process whether or not this process gets a log file.
+    #[cfg(not(feature = "native-host"))]
     if params.main_thread_checker != 0 {
         crate::main_thread_checker::load();
     }
@@ -311,7 +316,9 @@ pub extern "C" fn attach_metal_layer_handler(args: *mut c_void) -> i32 {
         hdr_enable: params.hdr_enable != 0,
         color_space: params.color_space,
         backing_scale_sink_ptr: params.backing_scale_ptr,
+        #[cfg(not(feature = "native-host"))]
         cursor_kick_sink_ptr: params.cursor_kick_ptr,
+        #[cfg(not(feature = "native-host"))]
         client_surface_request_sink_ptr: params.client_surface_request_ptr,
         software_cursor: params.software_cursor,
     };

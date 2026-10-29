@@ -10,6 +10,7 @@ mod encoder_service;
 mod handlers;
 mod hud_state;
 mod log_file;
+#[cfg(not(feature = "native-host"))]
 mod main_thread_checker;
 mod metal;
 mod shader_prewarm;
@@ -26,9 +27,11 @@ mod translation;
 /// `InitLogger` from its own `DllMain` before any other call.
 const LOG_TARGET: &str = "mtld3d::unix";
 
+#[cfg(not(feature = "native-host"))]
 #[unsafe(no_mangle)]
 pub static __wine_unix_call_funcs: [UnixCallFn; Thunks::COUNT] = DISPATCH_TABLE;
 
+#[cfg(not(feature = "native-host"))]
 #[unsafe(no_mangle)]
 pub static __wine_unix_call_wow64_funcs: [UnixCallFn; Thunks::COUNT] = DISPATCH_TABLE;
 
@@ -69,6 +72,31 @@ macro_rules! arp {
         }
         arp_wrap as UnixCallFn
     }};
+}
+
+/// Run the handler of thunk `code` in process: a native host build's `unix_call`.
+///
+/// The same table Wine's dispatcher indexes, with the same per-handler
+/// autorelease pool. A code past the table is `STATUS_INVALID_PARAMETER`, as
+/// Wine answers it.
+///
+/// # Safety
+///
+/// `args` is what the handler of `code` expects: the parameter record of the
+/// thunk whose `Thunk::CODE` is `code`, live and exclusively borrowed for the
+/// call, as the PE side's `unix_call` passes it.
+#[cfg(feature = "native-host")]
+pub unsafe fn native_unix_call(code: u32, args: *mut c_void) -> i32 {
+    /// `STATUS_INVALID_PARAMETER`.
+    const STATUS_INVALID_PARAMETER: i32 = 0xC000_000D_u32.cast_signed();
+    let Some(handler) = usize::try_from(code)
+        .ok()
+        .and_then(|index| DISPATCH_TABLE.get(index))
+    else {
+        return STATUS_INVALID_PARAMETER;
+    };
+    // SAFETY: the caller's contract: `args` is the record this handler reads.
+    unsafe { handler(args) }
 }
 
 const fn dispatch(code: Thunks) -> UnixCallFn {

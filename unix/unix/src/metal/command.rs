@@ -1733,6 +1733,7 @@ pub fn encode_exact_copy(
 /// sprite, so every fragment lands on its texel. The target is cleared to
 /// transparent first: the cursor pipelines write premultiplied colour and
 /// alpha and the overlay window shows whatever the pass did not cover.
+#[cfg(not(feature = "native-host"))]
 pub fn encode_cursor_pass(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     src: &ProtocolObject<dyn MTLTexture>,

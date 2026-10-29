@@ -96,8 +96,10 @@ pub struct LayerAttachRequest {
     /// like.
     pub backing_scale_sink_ptr: u64,
     /// Where a cursor re-apply request is written on the PE side, `0` = nowhere.
+    #[cfg(not(feature = "native-host"))]
     pub cursor_kick_sink_ptr: u64,
     /// Where a client surface present request is written on the PE side, `0` = nowhere.
+    #[cfg(not(feature = "native-host"))]
     pub client_surface_request_sink_ptr: u64,
     /// `cursor.software`, resolved here against the layer mode attach picks.
     pub software_cursor: SoftwareCursorPolicy,
@@ -164,6 +166,7 @@ pub mod bounded_cast {
     /// `f64 → f32` narrowing.
     ///
     /// Caller establishes the bound where mantissa loss is acceptable.
+    #[cfg(not(feature = "native-host"))]
     pub const fn f64_to_f32(v: f64) -> f32 {
         v as f32
     }
@@ -172,6 +175,7 @@ pub mod bounded_cast {
     ///
     /// Caller establishes `|v|` is well inside the f32 mantissa (< 2^24) so
     /// the cast is exact.
+    #[cfg(not(feature = "native-host"))]
     pub const fn i32_to_f32(v: i32) -> f32 {
         v as f32
     }

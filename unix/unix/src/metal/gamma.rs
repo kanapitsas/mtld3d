@@ -108,6 +108,7 @@ pub fn set_gamma_ramp(
 /// A caller that caches what it rendered against compares this: a different
 /// number means the ramp moved and the cached image is stale.
 #[must_use]
+#[cfg(not(feature = "native-host"))]
 pub fn revision(layer: usize) -> u64 {
     tables().get(&layer).map_or(0, |table| table.revision)
 }
