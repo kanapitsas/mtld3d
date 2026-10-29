@@ -75,6 +75,20 @@ pub struct NativeHost {
     pub mode_count: u32,
 }
 
+// The C layout `d3d9metal.h` declares, on the 64-bit hosts the build serves.
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(core::mem::offset_of!(NativeHost, user) == 8);
+    assert!(core::mem::offset_of!(NativeHost, metal_layer) == 16);
+    assert!(core::mem::offset_of!(NativeHost, blocking_end) == 48);
+    assert!(core::mem::offset_of!(NativeHost, vendor_id) == 56);
+    assert!(core::mem::offset_of!(NativeHost, device_id) == 58);
+    assert!(core::mem::offset_of!(NativeHost, cache_dir) == 64);
+    assert!(core::mem::offset_of!(NativeHost, modes) == 72);
+    assert!(core::mem::offset_of!(NativeHost, mode_count) == 80);
+    assert!(size_of::<NativeHost>() == 88);
+};
+
 /// The display mode a host that names none reports, in pixels and Hz.
 pub const DEFAULT_MODE: (u32, u32, u32) = (1920, 1080, 60);
 
