@@ -23,7 +23,7 @@ COVERAGE_TESTS=windows/tests/tests
 # Files permitted to hold each narrowly-scoped exception. These are sets, not
 # counts: a new site fails even if an old one was deleted in the same change.
 ALLOW_SITES='unix/unix/src/metal/command.rs
-unix/unix/src/metal/macdrv.rs
+unix/unix/src/metal/layer.rs
 windows/core/src/config.rs'
 
 ONCELOCK_SITES='unix/shared/src/crumb.rs
